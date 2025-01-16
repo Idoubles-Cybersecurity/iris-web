@@ -27,6 +27,11 @@ def upgrade():
                     existing_type=sa.INTEGER(),
                     type_=sa.BigInteger(),
                     existing_nullable=False)
+    
+    op.alter_column('cases', 'case_template_id',
+                    existing_type=sa.INTEGER(),
+                    type_=sa.BigInteger(),
+                    existing_nullable=False)
 
     if not _table_has_column('cases', 'case_uuid'):
         op.add_column('cases',

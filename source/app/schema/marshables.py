@@ -1648,6 +1648,7 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
     initial date, and classification ID.
 
     """
+    case_template_id: int = auto_field('case_template_id', required=True)
     case_name: str = auto_field('name', required=True, validate=Length(min=2), allow_none=False)
     case_description: str = auto_field('description', required=True, validate=Length(min=2))
     case_soc_id: int = auto_field('soc_id', required=True)

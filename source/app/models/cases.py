@@ -50,6 +50,7 @@ class Cases(db.Model):
     __tablename__ = 'cases'
 
     case_id = Column(BigInteger, primary_key=True)
+    case_template_id = Column(BigInteger, nullable=True)
     soc_id = Column(String(256))
     client_id = Column(ForeignKey('client.client_id'), nullable=False)
     name = Column(String(256))
@@ -97,6 +98,7 @@ class Cases(db.Model):
                  state_id=None
                  ):
         self.name = name[:200] if name else None,
+        self.case_template_id = 0
         self.soc_id = soc_id,
         self.client_id = client_id,
         self.description = description,

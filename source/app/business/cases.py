@@ -75,11 +75,12 @@ def create(request_json):
     try:
         # TODO remove caseid doesn't seems to be useful for call_modules_hook => remove argument
         request_data = call_modules_hook('on_preload_case_create', request_json, None)
-        case_template_id = request_data.pop('case_template_id', None)
+        case_template_id = request_data.get('case_template_id', None)
 
         case = _load(request_data)
         case.owner_id = current_user.id
         case.severity_id = 4
+        case.case_template_id = case_template_id
 
         if case_template_id and len(case_template_id) > 0:
             case = case_template_pre_modifier(case, case_template_id)
