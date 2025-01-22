@@ -10,18 +10,14 @@ function toggleJsonViewer(button) {
         .then(response => response.json())
         .then(data => {
             if (data.status && data.data) {
-                console.log(data.data.body);
                 const responseData = data.data.body;
 
                 const jsonCrackEmbed = document.getElementById("jsoncrackIframe");
-                console.log("Parsed data to be displayed in JSONCrack:", responseData);
                 const jsonViewerContainer = $('#jsonViewerContainer');
 
-                // Show the container
-                jsonViewerContainer.slideDown();
-                console.log("here");
 
-                // Post data to the iframe
+                jsonViewerContainer.slideDown();
+
                 if (jsonCrackEmbed && jsonCrackEmbed.contentWindow) {
                     const options = {
                         theme: "light", 

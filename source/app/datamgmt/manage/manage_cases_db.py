@@ -591,7 +591,6 @@ def save_results(data, case_id, webhook_id):
         db.session.add(case_response)
         db.session.commit()
         
-        print(case_response.id, case_response.case, case_response.trigger, case_response.body, case_response.execution_time)
         print(f"CaseResponse saved successfully with id {case_response.id}")
     except Exception as e:
         db.session.rollback()  # Roll back the session in case of an error
@@ -602,27 +601,22 @@ def execute_and_save_action(action, task_id, action_id):
     try:
         # Extract webhook_id
         webhook_id = action_id
-        print(f"Webhook ID: {webhook_id}")
         if not webhook_id:
             raise ValueError("Action execution failed: webhook_id is missing in action.")
 
         # Fetch webhook details
         webhook = get_webhook_by_id(webhook_id)
-        print(f"Webhook Object: {webhook}")
         if not webhook:
             raise ValueError(f"Action execution failed: No webhook found for webhook_id {webhook_id}.")
 
         # Validate the webhook URL
         url = webhook.url
-        print(f"Webhook URL: {url}")
         if not url:
             raise ValueError(f"Action execution failed: URL is missing in webhook with id {webhook_id}.")
 
         # Execute the webhook request
-        print(f"Executing webhook request to URL: {url} with data: {action}")
         response = requests.post(url, json=action, verify=False)
         print(f"Webhook Response Status Code: {response.status_code}")
-        print(f"Webhook Response Content: {response.text}")
 
         # Validate and process the response
         if response.status_code == 200:
