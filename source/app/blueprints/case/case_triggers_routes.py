@@ -29,7 +29,6 @@ def case_triggers_list(cur_id):
     try:
         # Retrieve the triggers list
         triggers = get_case_responses_list_by_case_id(cur_id)
-        print(f"triggers", triggers)
         # Serialize datetime objects for rendering
         for trigger in triggers:
             # Format created_at

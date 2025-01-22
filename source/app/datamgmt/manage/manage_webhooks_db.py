@@ -62,7 +62,6 @@ def get_webhook_by_id(cur_id: int) -> Webhook:
     Returns:
         Webhook: Webhook
     """
-    print(f"Received request for webhook ID: {cur_id}")
 
     webhook = Webhook.query.filter_by(id=cur_id).first()
     return webhook

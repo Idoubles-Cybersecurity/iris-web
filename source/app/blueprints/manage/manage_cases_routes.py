@@ -373,9 +373,7 @@ def api_add_case():
         # Function to execute a trigger in a new thread with app context
         def execute_trigger_with_context(trigger, app):
             with app.app_context():
-                print('in Execute')
                 execute_and_save_trigger(trigger, case_id)
-                print(f"Trigger {trigger} executed successfully.")
 
         for trigger in triggers:
             thread = Thread(target=execute_trigger_with_context, args=(trigger, current_app._get_current_object()))

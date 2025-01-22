@@ -68,7 +68,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 {
                     data: "body",
                     render: function (data, type, row) {
-                        console.log("Body data:", data);
                         const task = row.id;
                         return `
                             <button type="button" class="btn btn-primary btn-sm view-response"
@@ -88,7 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     
         setInterval(() => {
-            console.log("Reloading table every 3 seconds");
             $("#trigger_table").DataTable().ajax.reload(null, false);
         }, 3000);
     }
