@@ -538,32 +538,26 @@ def execute_and_save_trigger(trigger, case_id):
     try:
         # Extract webhook_id from the trigger
         webhook_id = trigger.get("webhook_id")
-        print(f"Webhook ID: {webhook_id}")  # Debugging: Ensure webhook_id is being accessed
         if not webhook_id:
             raise ValueError("Trigger execution failed: webhook_id is missing in trigger.")
 
         # Fetch the webhook object from the database
         webhook = get_webhook_by_id(webhook_id)
-        print(f"Webhook Object: {webhook}")  # Debugging: Log the webhook object
         if not webhook:
             raise ValueError(f"Trigger execution failed: No webhook found for webhook_id {webhook_id}.")
 
         # Fetch the URL from the webhook object
         url = webhook.url  # Adjust this based on your webhook model's attributes
-        print(f"Webhook URL: {url}")  # Debugging: Ensure URL is being accessed
         if not url:
             raise ValueError(f"Trigger execution failed: URL is missing in webhook with id {webhook_id}.")
 
         # Execute the webhook request
-        print(f"Executing webhook request to URL: {url} with data: {trigger}")
         response = requests.post(url, json=trigger , verify=False)
         print(f"Webhook Response Status Code: {response.status_code}")  # Log response status
-        print(f"Webhook Response Content: {response.text}")  # Log response content
 
         # Check response status
         if response.status_code == 200:
             results = response.json()
-            print(f"Webhook Execution Results: {results}")  # Log the result of the execution
             save_results(results, case_id, webhook_id)  # Assuming save_results is implemented to handle the output
             return f"Trigger executed successfully and saved for webhook_id {webhook_id}."
         else:
