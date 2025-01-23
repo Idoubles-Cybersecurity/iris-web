@@ -34,8 +34,6 @@ services:
       - POSTGRES_DB
     networks:
       - iris_backend
-    ports:
-      - "0.0.0.0:5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -49,7 +47,6 @@ services:
       - iris-downloads:/home/iris/downloads
       - user_templates:/home/iris/user_templates
       - server_data:/home/iris/server_data
-      - ./source/app:/iriswebapp/app
     restart: always
     depends_on:
       - "rabbitmq"
