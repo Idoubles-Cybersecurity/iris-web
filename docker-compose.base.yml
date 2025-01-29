@@ -32,16 +32,16 @@ services:
       - POSTGRES_ADMIN_USER
       - POSTGRES_ADMIN_PASSWORD
       - POSTGRES_DB
+    env_file:
+      - .env
     networks:
       - iris_backend
-    ports:
-      - "0.0.0.0:5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
   app:
     container_name: iriswebapp_app
-    command: ['nohup', './iris-entrypoint.sh', 'iriswebapp']
+    command: ["nohup", "./iris-entrypoint.sh", "iriswebapp"]
     volumes:
       - ./certificates/rootCA/irisRootCACert.pem:/etc/irisRootCACert.pem:ro
       - ./certificates/:/home/iris/certificates/:ro
@@ -49,7 +49,6 @@ services:
       - iris-downloads:/home/iris/downloads
       - user_templates:/home/iris/user_templates
       - server_data:/home/iris/server_data
-      - ./source/app:/iriswebapp/app
     restart: always
     depends_on:
       - "rabbitmq"
@@ -72,7 +71,13 @@ services:
   worker:
     container_name: iriswebapp_worker
     restart: always
-    command: ['./wait-for-iriswebapp.sh', 'app:8000', './iris-entrypoint.sh', 'iris-worker']
+    command:
+      [
+        "./wait-for-iriswebapp.sh",
+        "app:8000",
+        "./iris-entrypoint.sh",
+        "iris-worker",
+      ]
     volumes:
       - ./certificates/rootCA/irisRootCACert.pem:/etc/irisRootCACert.pem:ro
       - ./certificates/:/home/iris/certificates/:ro
