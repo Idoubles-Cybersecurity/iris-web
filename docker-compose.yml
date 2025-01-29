@@ -28,8 +28,8 @@ services:
     build:
       context: docker/db
     image: iriswebapp_db:v2.4.7
-    # ports:
-    #   - "127.0.0.1:5432:5432"
+    ports:
+      - "0.0.0.0:5432:5432"
 
   app:
     extends:
@@ -39,8 +39,8 @@ services:
       context: .
       dockerfile: docker/webApp/Dockerfile
     image: iriswebapp_app:v2.4.7
-    # ports:
-    #   - "0.0.0.0:8000:8000"
+    ports:
+      - "0.0.0.0:8000:8000"
 
   worker:
     extends:
