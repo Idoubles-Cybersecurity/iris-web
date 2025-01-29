@@ -137,8 +137,8 @@ def run_post_init(development=False):
             exit(1)
 
         # Setup database before everything
-        #log.info("Adding pgcrypto extension")
-        #pg_add_pgcrypto_ext()
+        log.info("Adding pgcrypto extension")
+        pg_add_pgcrypto_ext()
 
         # Setup database before everything
         with app.app_context():
