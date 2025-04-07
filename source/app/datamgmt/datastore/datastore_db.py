@@ -27,13 +27,12 @@ from sqlalchemy import func
 
 from app import app
 from app import db
-from app.datamgmt.case.case_iocs_db import add_ioc_link
-from app.models import CaseReceivedFile
-from app.models import DataStoreFile
-from app.models import DataStorePath
-from app.models import Ioc
-from app.models import IocType
-from app.models import Tlp
+from app.models.models import CaseReceivedFile
+from app.models.models import DataStoreFile
+from app.models.models import DataStorePath
+from app.models.models import Ioc
+from app.models.models import IocType
+from app.models.models import Tlp
 
 
 def datastore_get_root(cid):
@@ -53,6 +52,7 @@ def datastore_get_root(cid):
         ).first()
 
     return dsp_root
+
 
 def ds_list_tree(cid):
     dsp_root = datastore_get_root(cid)
@@ -88,6 +88,7 @@ def ds_list_tree(cid):
     for dfile in dsf:
         dfnode = dfile.__dict__
         dfnode.pop('_sa_instance_state')
+        dfnode.pop('file_local_name')
         dfnode['type'] = "file"
         dnode_id = f"f-{dfile.file_id}"
         dnode_parent_id = f"d-{dfile.file_parent_id}"
@@ -180,7 +181,7 @@ def datastore_add_child_node(parent_node, folder_name, cid):
             DataStorePath.path_case_id == cid
         ).first()
 
-    except Exception as e:
+    except Exception:
         return True, f'Unable to request datastore for parent node : {parent_node}', None
 
     if dsp_base is None:
@@ -206,7 +207,7 @@ def datastore_rename_node(parent_node, folder_name, cid):
             DataStorePath.path_case_id == cid
         ).first()
 
-    except Exception as e:
+    except Exception:
         return True, f'Unable to request datastore for parent node : {parent_node}', None
 
     if dsp_base is None:
@@ -226,7 +227,7 @@ def datastore_delete_node(node_id, cid):
             DataStorePath.path_case_id == cid
         ).first()
 
-    except Exception as e:
+    except Exception:
         return True, f'Unable to request datastore for parent node : {node_id}'
 
     if dsp_base is None:
@@ -371,10 +372,6 @@ def datastore_add_file_as_ioc(dsf, caseid):
 
         db.session.add(ioc)
         db.session.commit()
-
-    add_ioc_link(ioc.ioc_id, caseid)
-
-    return
 
 
 def datastore_add_file_as_evidence(dsf, caseid):
@@ -522,6 +519,7 @@ def datastore_filter_tree(filter_d, caseid):
     for dfile in dsf:
         dfnode = dfile.__dict__
         dfnode.pop('_sa_instance_state')
+        dfnode.pop('file_local_name')
         dfnode['type'] = "file"
         dnode_id = f"f-{dfile.file_id}"
         dnode_parent_id = f"d-{dfile.file_parent_id}"

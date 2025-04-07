@@ -22,9 +22,9 @@ from typing import List
 from app import db
 from app.datamgmt.exceptions.ElementExceptions import ElementInUseException
 from app.datamgmt.exceptions.ElementExceptions import ElementNotFoundException
-from app.models import Cases
-from app.models import Client
-from app.models import Contact
+from app.models.cases import Cases
+from app.models.models import Client
+from app.models.models import Contact
 from app.models.authorization import User, UserClient
 from app.schema.marshables import ContactSchema
 from app.schema.marshables import CustomerSchema
@@ -140,7 +140,7 @@ def delete_contact(contact_id: int) -> None:
         db.session.delete(contact)
         db.session.commit()
 
-    except Exception as e:
+    except Exception:
         raise ElementInUseException('A currently referenced contact cannot be deleted')
 
 
@@ -205,7 +205,7 @@ def delete_client(client_id: int) -> None:
         db.session.delete(client)
         db.session.commit()
 
-    except Exception as e:
+    except Exception:
         raise ElementInUseException('A currently referenced customer cannot be deleted')
 
 

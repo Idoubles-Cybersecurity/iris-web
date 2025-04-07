@@ -18,28 +18,51 @@
 
 from datetime import datetime
 from flask_login import current_user
-from sqlalchemy import desc, and_
+from sqlalchemy import desc
+from sqlalchemy import and_
 
 from app import db
+from app.datamgmt.conversions import convert_sort_direction
 from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
 from app.datamgmt.manage.manage_users_db import get_users_list_restricted_from_case
 from app.datamgmt.states import update_tasks_state
-from app.models import CaseTasks, TaskAssignee
-from app.models import Cases
-from app.models import Comments
-from app.models import TaskComments
-from app.models import TaskStatus
+from app.models.models import CaseTasks
+from app.models.models import TaskAssignee
+from app.models.cases import Cases
+from app.models.models import Comments
+from app.models.models import TaskComments
+from app.models.models import TaskStatus
 from app.models.authorization import User
-from app.models.models import TaskResponse
+from app.models.pagination_parameters import PaginationParameters, TaskResponse
 
 
 def get_tasks_status():
     return TaskStatus.query.all()
 
 
-def get_tasks(caseid):
-    return CaseTasks.query.with_entities(
-        CaseTasks.id.label("task_id"),
+def get_filtered_tasks(case_identifier, pagination_parameters: PaginationParameters):
+
+    query = CaseTasks.query.filter(
+        CaseTasks.task_case_id == case_identifier
+    ).join(
+        CaseTasks.status
+    ).order_by(
+        desc(TaskStatus.status_name)
+    )
+
+    sort_by = pagination_parameters.get_order_by()
+    if sort_by is not None:
+        order_func = convert_sort_direction(pagination_parameters.get_direction())
+
+        if hasattr(CaseTasks, sort_by):
+            query = query.order_by(order_func(getattr(CaseTasks, sort_by)))
+
+    return query.paginate(page=pagination_parameters.get_page(), per_page=pagination_parameters.get_per_page(), error_out=False)
+
+
+def get_tasks_with_assignees(caseid):
+    tasks = CaseTasks.query.with_entities(
+        CaseTasks.id.label('task_id'),
         CaseTasks.task_uuid,
         CaseTasks.task_title,
         CaseTasks.task_description,
@@ -55,10 +78,6 @@ def get_tasks(caseid):
     ).order_by(
         desc(TaskStatus.status_name)
     ).all()
-
-
-def get_tasks_with_assignees(caseid):
-    tasks = get_tasks(caseid)
     if not tasks:
         return None
 
@@ -99,29 +118,11 @@ def get_tasks_with_assignees(caseid):
     return task_with_assignees
 
 
-def get_task(task_id, caseid):
-    return CaseTasks.query.filter(CaseTasks.id == task_id, CaseTasks.task_case_id == caseid).first()
+def get_task(task_id: int) -> CaseTasks:
+    return CaseTasks.query.filter(CaseTasks.id == task_id).first()
 
 
-def get_task_with_assignees(task_id: int, case_id: int):
-    """
-    Returns a task with its assignees
-
-    Args:
-        task_id (int): Task ID
-        case_id (int): Case ID
-
-    Returns:
-        dict: Task with its assignees
-    """
-    task = get_task(
-        task_id=task_id,
-        caseid=case_id
-    )
-
-    if not task:
-        return None
-
+def get_task_assignees(task_identifier: int):
     get_assignee_list = TaskAssignee.query.with_entities(
         TaskAssignee.task_id,
         User.user,
@@ -130,7 +131,7 @@ def get_task_with_assignees(task_id: int, case_id: int):
     ).join(
         TaskAssignee.user
     ).filter(
-        TaskAssignee.task_id == task_id
+        TaskAssignee.task_id == task_identifier
     ).all()
 
     assignee_list = {}
@@ -149,13 +150,11 @@ def get_task_with_assignees(task_id: int, case_id: int):
                 'id': member.id
             })
 
-    setattr(task, 'task_assignees', assignee_list.get(task.id, []))
-
-    return task
+    return assignee_list.get(task_identifier, [])
 
 
 def update_task_status(task_status, task_id, caseid):
-    task = get_task(task_id, caseid)
+    task = get_task(task_id)
     if task:
         try:
             task.task_status_id = task_status
@@ -170,13 +169,10 @@ def update_task_status(task_status, task_id, caseid):
         return False
 
 
-def update_task_assignees(task, task_assignee_list, caseid):
-    if not task:
-        return None
-
+def update_task_assignees(task_identifier, task_assignee_list, caseid):
     cur_assignee_list = TaskAssignee.query.with_entities(
         TaskAssignee.user_id
-    ).filter(TaskAssignee.task_id == task.id).all()
+    ).filter(TaskAssignee.task_id == task_identifier).all()
 
     # Some formatting
     set_cur_assignees = set([assignee[0] for assignee in cur_assignee_list])
@@ -194,19 +190,17 @@ def update_task_assignees(task, task_assignee_list, caseid):
         user = User.query.filter(User.id == uid).first()
         if user:
             ta = TaskAssignee()
-            ta.task_id = task.id
+            ta.task_id = task_identifier
             ta.user_id = user.id
             db.session.add(ta)
 
     for uid in assignees_to_remove:
         TaskAssignee.query.filter(
-            and_(TaskAssignee.task_id == task.id,
+            and_(TaskAssignee.task_id == task_identifier,
                  TaskAssignee.user_id == uid)
         ).delete()
 
     db.session.commit()
-
-    return task
 
 
 def add_task(task, assignee_id_list, user_id, caseid):
@@ -225,7 +219,7 @@ def add_task(task, assignee_id_list, user_id, caseid):
     db.session.commit()
 
     update_task_status(task.task_status_id, task.id, caseid)
-    update_task_assignees(task, assignee_id_list, caseid)
+    update_task_assignees(task.id, assignee_id_list, caseid)
 
     return task
 

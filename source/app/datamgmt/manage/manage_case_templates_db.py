@@ -26,6 +26,9 @@ from app.datamgmt.case.case_tasks_db import add_task, get_task
 from app.datamgmt.manage.manage_case_classifications_db import get_case_classification_by_name
 from app.iris_engine.module_handler.module_handler import call_modules_hook
 from app.models import CaseTemplate, Cases, Tags, NoteDirectory, CaseResponse, TaskResponse
+app.models.models import CaseTemplate
+from app.models.models import Tags
+from app.models.models import NoteDirectory
 from app.models.authorization import User
 from app.schema.marshables import CaseSchema, TaskResponseSchema, CaseTaskSchema, CaseNoteDirectorySchema, CaseNoteSchema
 from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
@@ -258,7 +261,7 @@ def case_template_populate_tasks(case: Cases, case_template: CaseTemplate):
             mapped_task_template = call_modules_hook('on_preload_task_create', data=mapped_task_template, caseid=case.case_id)
 
             task = task_schema.load(mapped_task_template)
-            
+
             assignee_id_list = []
 
             ctask = add_task(task=task,
@@ -389,11 +392,11 @@ def get_triggers_by_case_template_id(case_template_id) -> CaseTemplate:
     """
 
     case_template = CaseTemplate.query.filter_by(id=case_template_id).first()
-    
-    if not case_template:
-        return []  
 
- 
+    if not case_template:
+        return []
+
+
     return case_template.triggers or []
 
 def get_action_by_case_template_id_and_task_id(case_template_id, task_id, caseid) -> list:
@@ -408,17 +411,17 @@ def get_action_by_case_template_id_and_task_id(case_template_id, task_id, caseid
     case_template = CaseTemplate.query.filter_by(id=case_template_id).first()
     case_task = get_task(task_id=task_id, caseid=caseid)
     if not case_template:
-        return []  
+        return []
 
     actions = []
 
     for task in case_template.tasks:
-     
-        if case_task.task_title == task["title"]: 
+
+        if case_task.task_title == task["title"]:
            if 'actions' in task:
 
             for action in task['actions']:
-                actions.append(dict(action))  
+                actions.append(dict(action))
 
     return actions
 

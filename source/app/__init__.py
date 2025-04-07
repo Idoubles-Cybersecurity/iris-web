@@ -24,12 +24,13 @@ from flask import Flask
 from flask import session
 from flask_bcrypt import Bcrypt
 from flask_caching import Cache
+
 from flask_login import LoginManager
 from flask_marshmallow import Marshmallow
 from flask_socketio import SocketIO, Namespace
 from flask_sqlalchemy import SQLAlchemy
 from functools import partial
-from sqlalchemy_imageattach.stores.fs import HttpExposedFileSystemStore
+
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.flask_dropzone import Dropzone
@@ -62,7 +63,11 @@ LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 logger.basicConfig(level=logger.INFO, format=LOG_FORMAT, datefmt=LOG_TIME_FORMAT)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../static')
+
+# CORS(app,
+#      supports_credentials=True,
+#      resources={r"/api/*": {"origins": ["http://127.0.0.1:5137", "http://localhost:5173"]}})
 
 
 def ac_current_user_has_permission(*permissions):
@@ -95,6 +100,11 @@ app.jinja_options["autoescape"] = lambda _: True
 app.jinja_env.autoescape = True
 
 app.config.from_object('app.configuration.Config')
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax'
+)
 
 cache = Cache(app)
 
@@ -116,13 +126,13 @@ dropzone = Dropzone(app)
 
 celery = make_celery(app)
 
-store = HttpExposedFileSystemStore(
-    path='images',
-    prefix='/static/assets/images/'
-)
+# store = HttpExposedFileSystemStore(
+#     path='images',
+#     prefix='/static/assets/images/'
+# )
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
-app.wsgi_app = store.wsgi_middleware(app.wsgi_app)
+#app.wsgi_app = store.wsgi_middleware(app.wsgi_app)
 
 socket_io = SocketIO(app, cors_allowed_origins="*")
 
@@ -137,5 +147,31 @@ if app.config.get('AUTHENTICATION_TYPE') == "oidc":
 def shutdown_session(exception=None):
     db.session.remove()
 
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
 
-from app import views
+    return response
+
+
+from app.views import register_blusprints
+from app.views import load_user
+from app.views import load_user_from_request
+
+register_blusprints(app)
+
+from app.post_init import run_post_init
+
+try:
+
+    run_post_init(development=app.config['DEVELOPMENT'])
+
+except Exception as e:
+    app.logger.exception('Post init failed. IRIS not started')
+    raise e
+
+lm.user_loader(load_user)
+lm.request_loader(load_user_from_request)

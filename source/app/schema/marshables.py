@@ -15,11 +15,11 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 import datetime
 import dateutil.parser
 import marshmallow
 import os
-import psycopg2
 import pyminizip
 import random
 import re
@@ -27,7 +27,8 @@ import shutil
 import string
 import tempfile
 from flask_login import current_user
-from marshmallow import ValidationError, EXCLUDE
+from marshmallow import ValidationError
+from marshmallow import EXCLUDE
 from marshmallow import fields
 from marshmallow import post_load
 from marshmallow import pre_load
@@ -36,7 +37,13 @@ from marshmallow_sqlalchemy import auto_field
 from pathlib import Path
 from sqlalchemy import func
 from sqlalchemy.orm import aliased
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import Union
+
 from werkzeug.datastructures import FileStorage
 
 from app import app
@@ -45,35 +52,51 @@ from app import ma
 from app.datamgmt.datastore.datastore_db import datastore_get_standard_path
 from app.datamgmt.manage.manage_attribute_db import merge_custom_attributes
 from app.datamgmt.manage.manage_tags_db import add_db_tag
+from app.datamgmt.case.case_iocs_db import get_ioc_links
 from app.iris_engine.access_control.utils import ac_mask_from_val_list
-from app.models import AnalysisStatus, CaseClassification, SavedFilter, DataStorePath, IrisModuleHook, Tags, \
-    ReviewStatus, EvidenceTypes, CaseStatus, NoteDirectory, NoteRevisions
-from app.models import AssetsType
-from app.models import CaseAssets
-from app.models import CaseReceivedFile
-from app.models import CaseTasks
-from app.models import Cases
-from app.models import CasesEvent
-from app.models import Client
-from app.models import Comments
-from app.models import Contact
-from app.models import DataStoreFile
-from app.models import EventCategory
-from app.models import GlobalTasks
-from app.models import Ioc
-from app.models import IocType
-from app.models import IrisModule
-from app.models import Notes
-from app.models import NotesGroup
-from app.models import ServerSettings
-from app.models import TaskStatus
-from app.models import Tlp
-from app.models.alerts import Alert, Severity, AlertStatus, AlertResolutionStatus
+from app.models.models import AnalysisStatus
+from app.models.models import CaseClassification
+from app.models.models import SavedFilter
+from app.models.models import DataStorePath
+from app.models.models import IrisModuleHook
+from app.models.models import Tags
+from app.models.models import ReviewStatus
+from app.models.models import EvidenceTypes
+from app.models.models import CaseStatus
+from app.models.models import NoteDirectory
+from app.models.models import NoteRevisions
+from app.models.models import AssetsType
+from app.models.models import CaseAssets
+from app.models.models import CaseReceivedFile
+from app.models.models import CaseTasks
+from app.models.cases import Cases
+from app.models.cases import CasesEvent
+from app.models.models import Client
+from app.models.models import Comments
+from app.models.models import Contact
+from app.models.models import DataStoreFile
+from app.models.models import EventCategory
+from app.models.models import GlobalTasks
+from app.models.models import Ioc
+from app.models.models import IocType
+from app.models.models import IrisModule
+from app.models.models import Notes
+from app.models.models import NotesGroup
+from app.models.models import ServerSettings
+from app.models.models import TaskStatus
+from app.models.models import Tlp
+from app.models.alerts import Alert
+from app.models.alerts import Severity
+from app.models.alerts import AlertStatus
+from app.models.alerts import AlertResolutionStatus
 from app.models.authorization import Group
 from app.models.authorization import Organisation
 from app.models.authorization import User
-from app.models.cases import CaseState, CaseProtagonist
-from app.util import file_sha256sum, str_to_bool, assert_type_mml
+from app.models.cases import CaseState
+from app.models.cases import CaseProtagonist
+from app.util import file_sha256sum
+from app.util import str_to_bool
+from app.util import assert_type_mml
 from app.util import stream_sha256sum
 
 ALLOWED_EXTENSIONS = {'png', 'svg'}
@@ -666,6 +689,8 @@ class CaseAssetsSchema(ma.SQLAlchemyAutoSchema):
     ioc_links: List[int] = fields.List(fields.Integer, required=False)
     asset_enrichment: str = auto_field('asset_enrichment', required=False)
     asset_type: AssetTypeSchema = ma.Nested(AssetTypeSchema, required=False)
+    alerts = fields.Nested('AlertSchema', many=True, exclude=['assets'])
+    analysis_status = fields.Nested('AnalysisStatusSchema', required=False)
 
     class Meta:
         model = CaseAssets
@@ -700,46 +725,6 @@ class CaseAssetsSchema(ma.SQLAlchemyAutoSchema):
             return asset
 
         return None
-
-    def is_unique_for_customer_from_cid(self, case_id, request_data):
-        """
-        Check if the asset is unique for the customer
-        """
-
-        case_alias = aliased(Cases)
-
-        customer_id = db.session.query(
-            case_alias.client_id
-        ).filter(
-            case_alias.case_id == case_id
-        ).first()
-
-        if customer_id is None:
-            raise marshmallow.exceptions.ValidationError("Case not found")
-
-        customer_id = customer_id[0]
-
-        return self.is_unique_for_customer(customer_id, request_data)
-
-    @staticmethod
-    def is_unique_for_cid(case_id, request_data):
-        """
-        Check if the asset is unique for the customer
-        """
-
-        asset = CaseAssets.query.filter(
-            func.lower(CaseAssets.asset_name) == func.lower(request_data.get('asset_name')),
-            CaseAssets.asset_type_id == request_data.get('asset_type_id'),
-            CaseAssets.asset_id != request_data.get('asset_id'),
-            CaseAssets.case_id == case_id
-        ).first()
-
-        if asset is not None:
-            raise marshmallow.exceptions.ValidationError("Asset name already exists in this case",
-                                                         field_name="asset_name")
-
-        return True
-
 
     @pre_load
     def verify_data(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
@@ -945,6 +930,7 @@ class CaseTemplateSchema(ma.Schema):
                                                                                                 allow_none=True,
                                                                                                 missing=[])
 
+    @staticmethod
     def validate_string_or_list(value: Union[str, List[str]]) -> Union[str, List[str]]:
         """Validates that a value is a string or a list of strings.
 
@@ -969,6 +955,7 @@ class CaseTemplateSchema(ma.Schema):
                     raise ValidationError('All items in list must be strings')
         return value
 
+    @staticmethod
     def validate_string_or_list_of_dict(value: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
         """Validates that a value is a string or a list of dictionaries with string values.
 
@@ -1064,7 +1051,16 @@ class IocTypeSchema(ma.SQLAlchemyAutoSchema):
         return data
 
 
-class IocSchema(ma.SQLAlchemyAutoSchema):
+class TlpSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Tlp
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+
+
+# TODO try to remove IocSchema and replace it by this new schema
+class IocSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing IOC objects.
 
     This schema defines the fields to include when serializing and deserializing IOC objects.
@@ -1075,6 +1071,13 @@ class IocSchema(ma.SQLAlchemyAutoSchema):
     ioc_value: str = auto_field('ioc_value', required=True, validate=Length(min=1), allow_none=False)
     ioc_enrichment: Optional[Dict[str, Any]] = auto_field('ioc_enrichment', required=False)
     ioc_type: Optional[IocTypeSchema] = ma.Nested(IocTypeSchema, required=False)
+    tlp = ma.Nested(TlpSchema)
+
+    def get_link(self, ioc):
+        ial = get_ioc_links(ioc.ioc_id)
+        return [row._asdict() for row in ial]
+
+    link = ma.Method('get_link')
 
     class Meta:
         model = Ioc
@@ -1125,6 +1128,98 @@ class IocSchema(ma.SQLAlchemyAutoSchema):
                 if not isinstance(tag, str):
                     raise marshmallow.exceptions.ValidationError("All items in list must be strings",
                                                                  field_name="ioc_tags")
+                add_db_tag(tag.strip())
+
+        return data
+
+    @post_load
+    def custom_attributes_merge(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Merges custom attributes with the IOC data.
+
+        This method merges any custom attributes specified in the data with the IOC data. If no custom attributes are
+        specified, it returns the original data.
+
+        Args:
+            data: The data to merge.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            The merged data.
+
+        """
+        new_attr = data.get('custom_attributes')
+        if new_attr is not None:
+            assert_type_mml(input_var=data.get('ioc_id'),
+                            field_name="ioc_id",
+                            type=int,
+                            allow_none=True)
+
+            data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('ioc_id'), 'ioc')
+
+        return data
+
+
+class IocSchema(ma.SQLAlchemyAutoSchema):
+    """Schema for serializing and deserializing IOC objects.
+
+    This schema defines the fields to include when serializing and deserializing IOC objects.
+    It includes fields for the IOC value, enrichment data, and the IOC type associated with the IOC.
+    It also includes methods for verifying the format of the IOC value and merging custom attributes.
+
+    """
+    ioc_value: str = auto_field('ioc_value', required=True, validate=Length(min=1), allow_none=False)
+    ioc_enrichment: Optional[Dict[str, Any]] = auto_field('ioc_enrichment', required=False)
+    ioc_type: Optional[IocTypeSchema] = ma.Nested(IocTypeSchema, required=False)
+
+    class Meta:
+        model = Ioc
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+
+    @pre_load
+    def verify_data(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Verifies the format of the IOC value and associated IOC type.
+
+        This method verifies that the IOC value specified in the data matches the expected format for the associated
+        IOC type. If the value does not match the expected format, it raises a validation error. It also verifies that
+        the specified IOC type ID and TLP ID are valid.
+
+        Args:
+            data: The data to verify.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            The verified data.
+
+        Raises:
+            ValidationError: If the IOC value does not match the expected format or if the specified IOC type ID or
+            TLP ID are invalid.
+
+        """
+        if data.get('ioc_type_id'):
+            assert_type_mml(input_var=data.get('ioc_type_id'), field_name='ioc_type_id', type=int)
+            ioc_type = IocType.query.filter(IocType.type_id == data.get('ioc_type_id')).first()
+            if not ioc_type:
+                raise marshmallow.exceptions.ValidationError('Invalid IOC type ID', field_name='ioc_type_id')
+
+            if ioc_type.type_validation_regex:
+                if not re.fullmatch(ioc_type.type_validation_regex, data.get('ioc_value'), re.IGNORECASE):
+                    error = f'The input doesn\'t match the expected format ' \
+                            f'(expected: {ioc_type.type_validation_expect or ioc_type.type_validation_regex})'
+                    raise marshmallow.exceptions.ValidationError(error, field_name="ioc_ioc_value")
+
+        if data.get('ioc_tlp_id'):
+            assert_type_mml(input_var=data.get('ioc_tlp_id'), field_name='ioc_tlp_id', type=int,
+                            max_val=POSTGRES_INT_MAX)
+
+            Tlp.query.filter(Tlp.tlp_id == data.get('ioc_tlp_id')).count()
+
+        if data.get('ioc_tags'):
+            for tag in data.get('ioc_tags').split(','):
+                if not isinstance(tag, str):
+                    raise marshmallow.exceptions.ValidationError('All items in list must be strings',
+                                                                 field_name='ioc_tags')
                 add_db_tag(tag.strip())
 
         return data
@@ -1223,7 +1318,7 @@ class EventSchema(ma.SQLAlchemyAutoSchema):
         try:
             self.event_date = dateutil.parser.isoparse(date_time)
             self.event_date_wtz = dateutil.parser.isoparse(date_time_wtz)
-        except Exception as e:
+        except Exception:
             raise marshmallow.exceptions.ValidationError("Invalid date time", field_name="event_date")
 
         return self.event_date, self.event_date_wtz
@@ -1504,7 +1599,7 @@ class DSFileSchema(ma.SQLAlchemyAutoSchema):
 
         if location is None:
             raise marshmallow.exceptions.ValidationError(
-                f"Unable to save file in target location",
+                "Unable to save file in target location",
                 field_name='file_content'
             )
 
@@ -1658,6 +1753,8 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
     initial_date: Optional[datetime.datetime] = auto_field('initial_date', required=False)
     classification_id: Optional[int] = auto_field('classification_id', required=False, allow_none=True)
     reviewer_id: Optional[int] = auto_field('reviewer_id', required=False, allow_none=True)
+    review_status: Optional[str] = auto_field('review_status', required=False, allow_none=True)
+    severity_id: Optional[int] = auto_field('severity_id', required=False, allow_none=True)
 
     class Meta:
         model = Cases
@@ -1925,6 +2022,34 @@ class TaskLogSchema(ma.Schema):
         unknown = EXCLUDE
 
 
+class AnalysisStatusSchema(ma.SQLAlchemyAutoSchema):
+    """Schema for serializing and deserializing AnalysisStatus objects.
+
+    This schema defines the fields to include when serializing and deserializing AnalysisStatus objects.
+    It includes fields for the analysis status name and analysis status value.
+
+    """
+
+    class Meta:
+        model = AnalysisStatus
+        load_instance = True
+        unknown = EXCLUDE
+
+
+class TaskStatusSchema(ma.SQLAlchemyAutoSchema):
+    """Schema for serializing and deserializing TaskStatus objects.
+
+    This schema defines the fields to include when serializing and deserializing TaskStatus objects.
+    It includes fields for the task status name, task status value, and CSRF token.
+
+    """
+
+    class Meta:
+        model = TaskStatus
+        load_instance = True
+        unknown = EXCLUDE
+
+
 class CaseTaskSchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing CaseTask objects.
 
@@ -1936,6 +2061,8 @@ class CaseTaskSchema(ma.SQLAlchemyAutoSchema):
     task_status_id: int = auto_field('task_status_id', required=True)
     task_assignees_id: Optional[List[int]] = fields.List(fields.Integer, required=False, allow_none=True)
     task_assignees: Optional[List[Dict[str, Any]]] = fields.List(fields.Dict, required=False, allow_none=True)
+    status = ma.Nested(TaskStatusSchema)
+    case = ma.Nested(CaseSchema, only=['case_name', 'case_id'])
 
     class Meta:
         model = CaseTasks
@@ -2331,20 +2458,6 @@ class AlertResolutionSchema(ma.SQLAlchemyAutoSchema):
         unknown = EXCLUDE
 
 
-class AnalysisStatusSchema(ma.SQLAlchemyAutoSchema):
-    """Schema for serializing and deserializing AnalysisStatus objects.
-
-    This schema defines the fields to include when serializing and deserializing AnalysisStatus objects.
-    It includes fields for the analysis status name and analysis status value.
-
-    """
-
-    class Meta:
-        model = AnalysisStatus
-        load_instance = True
-        unknown = EXCLUDE
-
-
 class EventCategorySchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing EventCategory objects.
 
@@ -2372,7 +2485,7 @@ class AlertSchema(ma.SQLAlchemyAutoSchema):
     classification = ma.Nested(CaseClassificationSchema)
     owner = ma.Nested(UserSchema, only=['id', 'user_name', 'user_login', 'user_email'])
     iocs = ma.Nested(IocSchema, many=True)
-    assets = ma.Nested(CaseAssetsSchema, many=True)
+    assets = ma.Nested(CaseAssetsSchema, many=True, exclude=['alerts'])
     resolution_status = ma.Nested(AlertResolutionSchema)
 
     class Meta:
@@ -2462,6 +2575,92 @@ class CaseProtagonistSchema(ma.SQLAlchemyAutoSchema):
         include_relationships = True
 
 
+# This is the new schema for /api/v2/cases. It's in between CaseSchema and CaseDetailsSchema
+# The goal was to have the same type for the cases returned in the following endpoints:
+# * GET /api/v2/cases
+# * POST /api/v2/cases
+# * GET /api/v2/cases/{identifier}
+# TODO The objective could then be to remove CaseSchema and CaseDetailsSchema
+class CaseSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
+    """Schema for serializing and deserializing Case objects.
+
+    This schema defines the fields to include when serializing and deserializing Case objects.
+    It includes fields for the case name, description, SOC ID, customer ID, organizations, protagonists, tags, CSRF token,
+    initial date, and classification ID.
+
+    """
+    case_name: str = auto_field('name', required=True, validate=Length(min=2), allow_none=False)
+    case_description: str = auto_field('description', required=True, validate=Length(min=2))
+    case_soc_id: int = auto_field('soc_id', required=True)
+    case_customer_id: int = auto_field('client_id', required=True)
+    case_organisations: List[int] = fields.List(fields.Integer, required=False)
+    protagonists: List[Dict[str, Any]] = fields.List(fields.Dict, required=False)
+    case_tags: Optional[str] = fields.String(required=False)
+    initial_date: Optional[datetime.datetime] = auto_field('initial_date', required=False)
+    classification_id: Optional[int] = auto_field('classification_id', required=False, allow_none=True)
+    reviewer_id: Optional[int] = auto_field('reviewer_id', required=False, allow_none=True)
+    owner = ma.Nested(UserSchema, only=['id', 'user_name', 'user_login', 'user_email'])
+    state = ma.Nested(CaseStateSchema)
+    case_customer = ma.Nested(CustomerSchema)
+    review_status = ma.Nested(ReviewStatusSchema)
+
+    class Meta:
+        model = Cases
+        include_fk = True
+        load_instance = True
+        exclude = ['name', 'description', 'soc_id', 'client_id', 'initial_date', 'state_id', 'owner_id']
+        unknown = EXCLUDE
+
+    @pre_load
+    def classification_filter(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Filters out empty classification IDs.
+
+        This method filters out empty classification IDs from the data.
+
+        Args:
+            data: The data to load.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            The filtered data.
+
+        """
+        if data.get('classification_id') == "":
+            del data['classification_id']
+
+        return data
+
+    @pre_load
+    def verify_customer(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Verifies that the customer ID is valid.
+
+        This method verifies that the customer ID specified in the data is valid.
+        If the ID is not valid, it raises a validation error.
+
+        Args:
+            data: The data to load.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            The loaded data.
+
+        Raises:
+            ValidationError: If the customer ID is not valid.
+
+        """
+        assert_type_mml(input_var=data.get('case_customer'),
+                        field_name='case_customer',
+                        type=int,
+                        allow_none=True)
+
+        client = Client.query.filter(Client.client_id == data.get('case_customer')).first()
+        if client:
+            return data
+
+        raise marshmallow.exceptions.ValidationError("Invalid client id",
+                                                     field_name="case_customer")
+
+
 class CaseDetailsSchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing Case objects in details."""
     client = ma.Nested(CustomerSchema)
@@ -2492,8 +2691,8 @@ class CaseDetailsSchema(ma.SQLAlchemyAutoSchema):
         cp = CaseProtagonistSchema(many=True).dump(cp)
         return cp
 
-    status_name = ma.Method("get_status_name")
-    protagonists = ma.Method("get_protagonists")
+    status_name = ma.Method('get_status_name')
+    protagonists = ma.Method('get_protagonists')
 
     class Meta:
         model = Cases
