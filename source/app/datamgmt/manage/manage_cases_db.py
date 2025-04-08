@@ -66,7 +66,7 @@ from app.models.models import Ioc
 from app.models.cases import CaseProtagonist
 from app.models.cases import CaseTags
 from app.models.cases import CaseState
-from app.models import CaseResponse
+from app.models.models import CaseResponse
 from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
 from app.models.models import TaskResponse
 from app.models.pagination_parameters import PaginationParameters

@@ -27,14 +27,14 @@ rest_api_blueprint = Blueprint('rest_api', __name__)
 
 @rest_api_blueprint.route('/api/ping', methods=['GET'])
 # CONTENT ------------------------------------------------
-@api_blueprint.route('/api/ping', methods=['GET'])
+@rest_api_blueprint.route('/api/ping', methods=['GET'])
 @ac_api_requires()
 def api_ping():
     return response_success("pong")
 
 
 @rest_api_blueprint.route('/api/versions', methods=['GET'])
-@api_blueprint.route('/api/versions', methods=['GET'])
+@rest_api_blueprint.route('/api/versions', methods=['GET'])
 @ac_api_requires()
 def api_version():
     versions = {

@@ -19,18 +19,16 @@ import requests
 import jsonschema
 from datetime import datetime
 from typing import List, Optional, Union
-
 from app import db
-from app.datamgmt.case.case_notes_db import add_note
 from app.datamgmt.case.case_tasks_db import add_task, get_task
 from app.datamgmt.manage.manage_case_classifications_db import get_case_classification_by_name
 from app.iris_engine.module_handler.module_handler import call_modules_hook
-from app.models import CaseTemplate, Cases, Tags, NoteDirectory, CaseResponse, TaskResponse
-app.models.models import CaseTemplate
+from app.models.cases import Cases
+from app.models.models import CaseTemplate
 from app.models.models import Tags
 from app.models.models import NoteDirectory
 from app.models.authorization import User
-from app.schema.marshables import CaseSchema, TaskResponseSchema, CaseTaskSchema, CaseNoteDirectorySchema, CaseNoteSchema
+from app.schema.marshables import CaseSchema, CaseTaskSchema, CaseNoteDirectorySchema, CaseNoteSchema
 from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
 
 

@@ -33,7 +33,8 @@ from app.models.models import Comments
 from app.models.models import TaskComments
 from app.models.models import TaskStatus
 from app.models.authorization import User
-from app.models.pagination_parameters import PaginationParameters, TaskResponse
+from app.models.models import TaskResponse
+from app.models.pagination_parameters import PaginationParameters
 
 
 def get_tasks_status():

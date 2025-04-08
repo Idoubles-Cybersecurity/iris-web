@@ -9,20 +9,22 @@ from flask_login import current_user
 from marshmallow import ValidationError
 
 from app import db
+from app.blueprints.access_controls import ac_api_requires, ac_requires, ac_requires_case_identifier
+from app.blueprints.responses import response_success, response_error
 from app.datamgmt.manage.manage_webhooks_db import get_webhooks_list
 from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
 from app.datamgmt.manage.manage_webhooks_db import delete_webhook_by_id
 from app.datamgmt.manage.manage_webhooks_db import validate_webhook
 from app.forms import AddAssetForm, WebhookForm
-from app.models import Webhook
+from app.models.models import Webhook
 from app.models.authorization import Permissions
 from app.iris_engine.utils.tracker import track_activity
 from app.schema.marshables import WebhookSchema
-from app.util import ac_api_requires
-from app.util import ac_requires_case_identifier
-from app.util import ac_requires
-from app.util import response_error
-from app.util import response_success
+# from app.util import ac_api_requires
+# from app.util import ac_requires_case_identifier
+# from app.util import ac_requires
+# from app.util import response_error
+# from app.util import response_success
 from app.datamgmt.manage.manage_case_templates_db import get_action_by_case_template_id_and_task_id
 
 manage_webhooks_blueprint = Blueprint('manage_webhooks',
@@ -32,7 +34,7 @@ manage_webhooks_blueprint = Blueprint('manage_webhooks',
 
 # CONTENT ------------------------------------------------
 @manage_webhooks_blueprint.route('/manage/webhooks', methods=['GET'])
-@ac_requires(Permissions.webhooks_read)
+@ac_api_requires(Permissions.webhooks_read)
 def manage_webhooks(caseid, url_redir):
     if url_redir:
         return redirect(url_for('manage_webhooks.manage_webhooks', cid=caseid))
@@ -96,7 +98,7 @@ def get_webhook(cur_id):
 
 
 @manage_webhooks_blueprint.route('/manage/webhooks/<int:cur_id>/modal', methods=['GET'])
-@ac_requires(Permissions.webhooks_read)
+@ac_api_requires(Permissions.webhooks_read)
 def webhook_modal(cur_id, caseid, url_redir):
     """Get an webhook
 
