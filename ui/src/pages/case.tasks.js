@@ -1,3 +1,4 @@
+
 var current_users_list = [];
 var g_task_id = null;
 var g_task_desc_editor = null;
@@ -270,7 +271,8 @@ function fetchWebhook(action_id , id) {
 function loadTableData(task_id) {
     $("#action_table").dataTable({
       ajax: {
-        url: `/case/task/action_responses/${task_id}`,
+        // url: `/case/tasks/${task_id}`,
+         url: `/case/tasks/action_responses/${task_id}`,
         contentType: "application/json",
         type: "GET",
         data: function (d) {
@@ -329,7 +331,8 @@ function loadTableData(task_id) {
 
 
 function expandActionDiv(actionDetails, task_id, action_id) {
-
+    debugger;
+console.log(actionDetails);
 const collapsibleContent = $('#collapsibleContent');
 const jsonEditorContainer = $('#jsoneditor');
 
@@ -351,7 +354,6 @@ window.jsonEditor = new JSONEditor(jsonEditorContainer[0], {
   show_errors: "change",
   form_name_root: " "
 });
-
 window.jsonEditor.on('ready', function () {
   if (actionDetails?.default) {
     window.jsonEditor.setValue(actionDetails.default);

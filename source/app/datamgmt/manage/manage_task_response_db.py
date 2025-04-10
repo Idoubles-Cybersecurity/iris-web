@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import List, Optional, Union
 
 from app import db
-from app.models import TaskResponse
+from app.models.models import TaskResponse
 from app.models.authorization import User
 from app.schema.marshables import TaskResponseSchema
 

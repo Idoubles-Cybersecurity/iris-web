@@ -6,7 +6,7 @@ function toggleJsonViewer(button) {
         return;  
     }
 
-    fetch(`/case/task/action_response/${id}`)
+    fetch(`/case/tasks/action_response/${id}`)
         .then(response => response.json())
         .then(data => {
             if (data.status && data.data) {

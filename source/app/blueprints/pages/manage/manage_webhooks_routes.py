@@ -20,11 +20,6 @@ from app.models.models import Webhook
 from app.models.authorization import Permissions
 from app.iris_engine.utils.tracker import track_activity
 from app.schema.marshables import WebhookSchema
-# from app.util import ac_api_requires
-# from app.util import ac_requires_case_identifier
-# from app.util import ac_requires
-# from app.util import response_error
-# from app.util import response_success
 from app.datamgmt.manage.manage_case_templates_db import get_action_by_case_template_id_and_task_id
 
 manage_webhooks_blueprint = Blueprint('manage_webhooks',
@@ -35,7 +30,10 @@ manage_webhooks_blueprint = Blueprint('manage_webhooks',
 # CONTENT ------------------------------------------------
 @manage_webhooks_blueprint.route('/manage/webhooks', methods=['GET'])
 @ac_api_requires(Permissions.webhooks_read)
-def manage_webhooks(caseid, url_redir):
+def manage_webhooks():
+    # Get 'cid' from the query string
+    caseid = request.args.get('cid', type=int)  # Default to None if not provided
+    url_redir = request.args.get('url_redir', default=False, type=bool)  # Check if a redirect is needed
     if url_redir:
         return redirect(url_for('manage_webhooks.manage_webhooks', cid=caseid))
 
@@ -99,7 +97,7 @@ def get_webhook(cur_id):
 
 @manage_webhooks_blueprint.route('/manage/webhooks/<int:cur_id>/modal', methods=['GET'])
 @ac_api_requires(Permissions.webhooks_read)
-def webhook_modal(cur_id, caseid, url_redir):
+def webhook_modal(cur_id):
     """Get an webhook
 
     Args:
@@ -108,6 +106,9 @@ def webhook_modal(cur_id, caseid, url_redir):
     Returns:
         HTML Template: webhook modal
     """
+    # Get 'cid' from the query string
+    caseid = request.args.get('cid', type=int)  # Default to None if not provided
+    url_redir = request.args.get('url_redir', default=False, type=bool)  # Check if a redirect is needed
     if url_redir:
         return redirect(url_for('manage_webhooks.manage_webhooks', cid=caseid))
 

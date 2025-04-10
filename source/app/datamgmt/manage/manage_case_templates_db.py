@@ -407,7 +407,7 @@ def get_action_by_case_template_id_and_task_id(case_template_id, task_id, caseid
     """
 
     case_template = CaseTemplate.query.filter_by(id=case_template_id).first()
-    case_task = get_task(task_id=task_id, caseid=caseid)
+    case_task = get_task(task_id=task_id)
     if not case_template:
         return []
 

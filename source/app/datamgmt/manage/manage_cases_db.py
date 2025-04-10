@@ -668,21 +668,21 @@ def save_results_for_tasks(data, task_id, webhook_id):
     """
     try:
         # Ensure data is a list of dictionaries
-        if isinstance(data, dict):
-            data = [data]
-        elif not isinstance(data, list):
-            raise ValueError("Unexpected data format: Expected a dictionary or list of dictionaries.")
+        # if isinstance(data, dict):
+        #     data = [data]
+        # elif not isinstance(data, list):
+        #     raise ValueError("Unexpected data format: Expected a dictionary or list of dictionaries.")
 
-        for item in data:
-            # Create a new TaskResponse object for each result
-            task_response = TaskResponse(
-                task=task_id,
-                action=webhook_id,
-                body=item,  # Assuming item is JSON-serializable
-            )
+        # for item in data:
+        # Create a new TaskResponse object for each result
+        task_response = TaskResponse(
+            task=task_id,
+            action=webhook_id,
+            body=data,  # Assuming item is JSON-serializable
+        )
 
-            # Add the object to the session
-            db.session.add(task_response)
+        # Add the object to the session
+        db.session.add(task_response)
 
         # Commit all changes at once
         db.session.commit()

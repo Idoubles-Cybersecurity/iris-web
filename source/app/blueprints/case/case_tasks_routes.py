@@ -30,7 +30,8 @@ from flask_login import current_user
 from flask_wtf import FlaskForm
 
 from app import db
-from app.blueprints.case.case_comments import case_comment_update
+from app.blueprints.rest.case_comments import case_comment_update
+# from app.blueprints.case.case_comments import case_comment_update
 from app.datamgmt.case.case_db import get_case
 from app.datamgmt.case.case_tasks_db import add_comment_to_task
 from app.datamgmt.case.case_tasks_db import add_task
@@ -40,7 +41,7 @@ from app.datamgmt.case.case_tasks_db import get_case_task_comment
 from app.datamgmt.case.case_tasks_db import get_case_task_comments
 from app.datamgmt.case.case_tasks_db import get_case_tasks_comments_count
 from app.datamgmt.case.case_tasks_db import get_task
-from app.datamgmt.case.case_tasks_db import get_task_with_assignees
+# from app.datamgmt.case.case_tasks_db import get_task_with_assignees
 from app.datamgmt.case.case_tasks_db import get_tasks_status
 from app.datamgmt.case.case_tasks_db import get_tasks_with_assignees
 from app.datamgmt.case.case_tasks_db import update_task_assignees

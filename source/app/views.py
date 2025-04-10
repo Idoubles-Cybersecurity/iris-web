@@ -96,6 +96,7 @@ from app.blueprints.rest.profile_routes import profile_rest_blueprint
 from app.blueprints.rest.reports_route import reports_rest_blueprint
 from app.blueprints.rest.search_routes import search_rest_blueprint
 from app.blueprints.graphql.graphql_route import graphql_blueprint
+from app.blueprints.pages.case.case_triggers_routes import case_triggers_blueprint
 from app.blueprints.rest.v2 import rest_v2_blueprint
 from app.models.authorization import User
 
@@ -177,10 +178,9 @@ def register_blusprints(app):
     app.register_blueprint(datastore_rest_blueprint)
     app.register_blueprint(alerts_blueprint)
     app.register_blueprint(alerts_rest_blueprint)
-
+    app.register_blueprint(case_triggers_blueprint)
     app.register_blueprint(rest_api_blueprint)
     app.register_blueprint(demo_blueprint)
-
     app.register_blueprint(rest_v2_blueprint)
 
 
