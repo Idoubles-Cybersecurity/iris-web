@@ -19,6 +19,9 @@
 import json
 from flask import Blueprint
 from flask import request
+from flask import redirect
+from flask import url_for
+from flask import render_template
 from flask_login import current_user
 from marshmallow import ValidationError
 
@@ -55,7 +58,7 @@ def list_case_templates():
 
 @manage_case_templates_rest_blueprint.route('/manage/case-templates/<int:cur_id>/modal', methods=['GET'])
 @ac_api_requires(Permissions.case_templates_read)
-def case_template_modal(cur_id, caseid, url_redir):
+def case_template_modal(cur_id):
     """Get a case template
 
     Args:
@@ -64,6 +67,8 @@ def case_template_modal(cur_id, caseid, url_redir):
     Returns:
         HTML Template: Case template modal
     """
+    caseid = request.args.get('caseid')
+    url_redir = request.args.get('url_redir')
     if url_redir:
         return redirect(url_for('manage_case_templates.manage_case_templates', cid=caseid))
 

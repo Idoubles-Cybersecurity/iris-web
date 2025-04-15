@@ -19,9 +19,10 @@
 import datetime
 import logging as log
 import traceback
+from threading import Thread
 
 from flask_login import current_user
-
+from flask import jsonify, current_app, g
 from marshmallow.exceptions import ValidationError
 
 from app import app
@@ -41,11 +42,11 @@ from app.datamgmt.case.case_db import save_case_tags
 from app.datamgmt.case.case_db import register_case_protagonists
 from app.datamgmt.case.case_db import get_review_id_from_name
 from app.datamgmt.alerts.alerts_db import get_alert_status_by_name
-from app.datamgmt.manage.manage_case_templates_db import case_template_pre_modifier
+from app.datamgmt.manage.manage_case_templates_db import case_template_pre_modifier, get_triggers_by_case_template_id
 from app.datamgmt.manage.manage_case_templates_db import case_template_post_modifier
 from app.datamgmt.manage.manage_access_control_db import user_has_client_access
 from app.datamgmt.manage.manage_case_state_db import get_case_state_by_name
-from app.datamgmt.manage.manage_cases_db import delete_case
+from app.datamgmt.manage.manage_cases_db import delete_case, execute_and_save_trigger
 from app.datamgmt.manage.manage_cases_db import reopen_case
 from app.datamgmt.manage.manage_cases_db import map_alert_resolution_to_case_status
 from app.datamgmt.manage.manage_cases_db import close_case
@@ -111,7 +112,23 @@ def cases_create(request_data):
 
     add_obj_history_entry(case, 'created')
     track_activity(f'new case "{case.name}" created', caseid=case.case_id, ctx_less=False)
+    # Get triggers for the case_template_id
+    triggers = get_triggers_by_case_template_id(case_template_id)
 
+    if not triggers:
+        raise BusinessProcessingError("No triggers found for the provided case_template_id.")
+
+    # Function to execute a trigger in a new thread with app context
+    def execute_trigger_with_context(trigger):
+        # Make sure each thread runs within the Flask app context
+        with app.app_context():
+            print(f"Trigger executed for case: {trigger}")
+            execute_and_save_trigger(trigger, case.case_id)
+
+    # Start a new thread for each trigger
+    for trigger in triggers:
+        thread = Thread(target=execute_trigger_with_context, args=(trigger,))
+        thread.start()
     return case
 
 

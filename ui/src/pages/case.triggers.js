@@ -63,8 +63,8 @@ document.addEventListener("DOMContentLoaded", () => {
             autoWidth: false,
             columns: [
                 { data: "id" },
-                { data: "trigger" },
-                { data: "case" },
+                // { data: "trigger" },
+                // { data: "case" },
                 {
                     data: "body",
                     render: function (data, type, row) {

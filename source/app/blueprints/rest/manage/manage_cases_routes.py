@@ -269,7 +269,7 @@ def api_add_case():
         if not case_template_id:
             raise BusinessProcessingError("Missing 'case_template_id' in request.")
 
-        case = cases_create(request.get_json())
+        case = cases_create(request_data)  # You can use request_data directly
         case_id = case.case_id  # Retrieve the case_id of the created case
 
         # Get triggers for the case_template_id
@@ -279,14 +279,19 @@ def api_add_case():
             raise BusinessProcessingError("No triggers found for the provided case_template_id.")
 
         # Function to execute a trigger in a new thread with app context
-        def execute_trigger_with_context(trigger, app):
-            with app.app_context():
+        def execute_trigger_with_context(trigger):
+            # Make sure each thread runs within the Flask app context
+            with current_app.app_context():
+                print(f"Trigger executed for case: {trigger}")
                 execute_and_save_trigger(trigger, case_id)
 
+        # Start a new thread for each trigger
         for trigger in triggers:
-            thread = Thread(target=execute_trigger_with_context, args=(trigger, current_app._get_current_object()))
+            thread = Thread(target=execute_trigger_with_context, args=(trigger,))
             thread.start()
+
         return response_success('Case created', data=case_schema.dump(case))
+
     except BusinessProcessingError as e:
         return response_error(e.get_message(), data=e.get_data())
 
