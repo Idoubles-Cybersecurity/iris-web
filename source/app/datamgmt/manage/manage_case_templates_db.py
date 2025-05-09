@@ -414,10 +414,7 @@ def get_action_by_case_template_id_and_task_id(case_template_id, task_id, caseid
     actions = []
 
     for task in case_template.tasks:
-
-        if case_task.task_title == task["title"]:
-           if 'actions' in task:
-
+        if case_task.task_title == task["title"] and "actions" in task:
             for action in task['actions']:
                 actions.append(dict(action))
 

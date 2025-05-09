@@ -61,8 +61,11 @@ class Permissions(enum.Enum):
     case_templates_read = 0x100
     case_templates_write = 0x200
 
-    webhooks_read = 0x100
-    webhooks_write = 0x200
+    # webhooks_read = 0x100
+    # webhooks_write = 0x200
+
+    webhooks_read = 0x1000
+    webhooks_write = 0x2000
 
     activities_read = 0x400
     all_activities_read = 0x800

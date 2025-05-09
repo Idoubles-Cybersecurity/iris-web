@@ -25,8 +25,7 @@ from app.blueprints.responses import response_success
 rest_api_blueprint = Blueprint('rest_api', __name__)
 
 
-@rest_api_blueprint.route('/api/ping', methods=['GET'])
-# CONTENT ------------------------------------------------
+
 @rest_api_blueprint.route('/api/ping', methods=['GET'])
 @ac_api_requires()
 def api_ping():

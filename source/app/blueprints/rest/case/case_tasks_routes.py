@@ -291,17 +291,13 @@ def save_data():
         task_id = data.get('task_id')
         action_id = data.get('action_id')
 
-        if not payload or not task_id or not action_id:
+        if not payload or task_id is None or action_id is None:
             raise KeyError("Missing one or more required keys: 'payload', 'task_id', 'action_id'")
 
         action_response = execute_and_save_action(payload, task_id, action_id)
         return response_success("ac_requires_case_identifier", action_response)
     except KeyError as e:
         return response_error(f"Missing key: {e}")
-    # except ValueError as e:
-    #     return jsonify({"status": "error", "message": str(e)}), 400
-    # except Exception as e:
-    #     return jsonify({"status": "error", "message": str(e)})
 
 @case_tasks_rest_blueprint.route('/case/tasks/action_response/<int:task_id>', methods=['GET'])
 def case_task_action_response_by_id(task_id):

@@ -170,7 +170,7 @@ def socket_summary_onsave(data):
 
 @socket_io.on('clear_buffer')
 @ac_socket_requires(CaseAccessLevel.full_access)
-def socket_summary_onchange(message):
+def socket_summary_clear_buffer(message):
 
     emit('clear_buffer', message)
 

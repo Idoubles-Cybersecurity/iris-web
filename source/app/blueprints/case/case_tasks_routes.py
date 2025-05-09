@@ -204,7 +204,7 @@ def case_add_task(caseid):
 @case_tasks_blueprint.route('/case/tasks/<int:cur_id>', methods=['GET'])
 @ac_api_case_requires(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 def case_task_view(cur_id, caseid):
-    task = get_task_with_assignees(task_id=cur_id, case_id=caseid)
+    task = get_tasks_with_assignees(caseid)
     if not task:
         return response_error("Invalid task ID for this case")
 
@@ -221,7 +221,7 @@ def case_task_view_modal(cur_id, caseid, url_redir):
 
     form = CaseTaskForm()
 
-    task = get_task_with_assignees(task_id=cur_id, case_id=caseid)
+    task = get_tasks_with_assignees(caseid)
     form.task_status_id.choices = [(a.id, a.status_name) for a in get_tasks_status()]
     form.task_assignees_id.choices = []
 
@@ -277,7 +277,7 @@ def case_task_action_response_by_id(cur_id):
 @ac_api_case_requires(CaseAccessLevel.full_access)
 def case_edit_task(cur_id, caseid):
     try:
-        task = get_task_with_assignees(task_id=cur_id, case_id=caseid)
+        task = get_tasks_with_assignees(caseid)
         if not task:
             return response_error("Invalid task ID for this case")
 
@@ -320,7 +320,7 @@ def case_edit_task(cur_id, caseid):
 @ac_api_case_requires(CaseAccessLevel.full_access)
 def case_delete_task(cur_id, caseid):
     call_modules_hook('on_preload_task_delete', data=cur_id, caseid=caseid)
-    task = get_task_with_assignees(task_id=cur_id, case_id=caseid)
+    task = get_tasks_with_assignees(caseid)
     if not task:
         return response_error("Invalid task ID for this case")
 

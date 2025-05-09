@@ -101,9 +101,7 @@
 {% block javascripts %}
 {% include 'includes/footer_case.html' %}
 <script>
-
-    const caseTemplateId = {{ case.case_template_id }}
-    console.log(caseTemplateId);  // Check the value
+    const caseTemplateId = {{ case.case_template_id | tojson }};
 </script>
 
 <script src="/static/assets/js/plugin/datatables/dataTables.cellEdit.js"></script>
