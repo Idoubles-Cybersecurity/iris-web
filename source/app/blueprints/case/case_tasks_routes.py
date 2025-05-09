@@ -137,7 +137,7 @@ def case_get_tasks_state(caseid):
 @case_tasks_blueprint.route('/case/tasks/status/update/<int:cur_id>', methods=['POST'])
 @ac_api_case_requires(CaseAccessLevel.full_access)
 def case_task_statusupdate(cur_id, caseid):
-    task = get_task(task_id=cur_id, caseid=caseid)
+    task = get_task(task_id=cur_id)
     if not task:
         return response_error("Invalid task ID for this case")
 
@@ -341,7 +341,7 @@ def case_comment_task_modal(cur_id, caseid, url_redir):
     if url_redir:
         return redirect(url_for('case_task.case_task', cid=caseid, redirect=True))
 
-    task = get_task(cur_id, caseid=caseid)
+    task = get_task(cur_id)
     if not task:
         return response_error('Invalid task ID')
 
@@ -365,7 +365,7 @@ def case_comment_task_list(cur_id, caseid):
 def case_comment_task_add(cur_id, caseid):
 
     try:
-        task = get_task(cur_id, caseid=caseid)
+        task = get_task(cur_id)
         if not task:
             return response_error('Invalid task ID')
 
