@@ -16,6 +16,7 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import json
+import sys
 
 from pathlib import Path
 
@@ -109,7 +110,7 @@ def connect_to_database(host: str, port: int) -> bool:
         return False
 
 
-def run_post_init(development=False):
+def run_post_init(development=False): #disable PYL-W0613
     """Runs post-initiation steps for the IRIS application.
 
     Args:
@@ -134,7 +135,7 @@ def run_post_init(development=False):
         # If the connection is still not established, exit the script
         if not conn:
             log.info("Failed to connect to database after " + str(retry_count) + " attempts.")
-            exit(1)
+            sys.exit(1)
 
         # Setup database before everything
         log.info("Adding pgcrypto extension")

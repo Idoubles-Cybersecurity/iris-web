@@ -108,7 +108,7 @@ def case_r(caseid, url_redir):
     reports = [row for row in reports]
 
     reports_act = get_activities_report_template()
-    reports_act = [row for row in reports_act]
+    reports_act = list(reports_act) #[row for row in reports_act]
 
     if not case:
         return render_template('select_case.html')
@@ -126,8 +126,7 @@ def case_exists_r(caseid):
 
     if case_exists(caseid):
         return response_success('Case exists')
-    else:
-        return response_error('Case does not exist', 404)
+    return response_error('Case does not exist', 404)
 
 
 @case_blueprint.route('/case/pipelines-modal', methods=['GET'])
@@ -383,7 +382,9 @@ def case_update_status(caseid):
         return response_error('Invalid case ID')
 
     status = request.get_json().get('status_id')
-    case_status = set(item.value for item in CaseStatus)
+    case_status = {item.value for item in CaseStatus}
+
+    # case_status = set(item.value for item in CaseStatus)
 
     try:
         status = int(status)
@@ -423,7 +424,7 @@ def case_review(caseid):
 
     if action == 'start':
         review_name = ReviewStatusList.review_in_progress
-    elif action == 'cancel' or action == 'request':
+    elif action in ["cancel", "request"]:
         review_name = ReviewStatusList.pending_review
     elif action == 'no_review':
         review_name = ReviewStatusList.no_review_required

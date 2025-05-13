@@ -61,7 +61,7 @@ def case_r(caseid, url_redir):
     reports = [row for row in reports]
 
     reports_act = get_activities_report_template()
-    reports_act = [row for row in reports_act]
+    reports_act = list(reports_act)#[row for row in reports_act]
 
     if not case:
         return render_template('select_case.html')

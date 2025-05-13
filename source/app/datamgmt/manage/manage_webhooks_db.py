@@ -15,9 +15,12 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import marshmallow
+import json
 import jsonschema
 from datetime import datetime
-from typing import List, Union
+from typing import List, Union, Optional
+
+
 
 from app import db
 from app.datamgmt.case.case_tasks_db import add_task
@@ -77,19 +80,12 @@ def delete_webhook_by_id(webhook_id: int):
     Webhook.query.filter_by(id=webhook_id).delete()
 
 
-import jsonschema
-from typing import Optional
-
-import json
-import jsonschema
-from typing import Optional
-
 def validate_webhook(data: dict, update: bool = False) -> Optional[str]:
     try:
         # Check for the 'name' field
-        if not update:
-            if "name" not in data:
-                return "<div><p><strong>Error:</strong> The 'name' field is required.</p></div>"
+        if not update and "name" not in data:
+            # if "name" not in data:
+            return "<div><p><strong>Error:</strong> The 'name' field is required.</p></div>"
 
         if "name" in data and not data["name"].strip():
             return "<div><p><strong>Error:</strong> The 'name' field cannot be empty.</p></div>"

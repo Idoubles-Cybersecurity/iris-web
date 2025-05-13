@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from flask_login import current_user
 # IMPORTS ------------------------------------------------
-from sqlalchemy import BigInteger, Table, CheckConstraint
+from sqlalchemy import BigInteger, CheckConstraint
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import Date

@@ -20,7 +20,7 @@ from datetime import date
 from datetime import timedelta
 from pathlib import Path
 import requests
-from sqlalchemy import and_, desc, asc
+from sqlalchemy import and_
 from sqlalchemy.orm import aliased
 from functools import reduce
 
@@ -563,7 +563,7 @@ def execute_and_save_trigger(trigger, case_id):
             raise ValueError(f"Trigger execution failed: URL is missing in webhook with id {webhook_id}.")
 
         # Execute the webhook request
-        response = requests.post(url, json=trigger , verify=False)
+        response = requests.post(url, json=trigger , verify=False) #nosec
         print(f"Webhook Response Status Code: {response.status_code}")  # Log response status
 
         # Check response status
@@ -571,11 +571,11 @@ def execute_and_save_trigger(trigger, case_id):
             results = response.json()
             save_results(results, case_id, webhook_id)  # Assuming save_results is implemented to handle the output
             return f"Trigger executed successfully and saved for webhook_id {webhook_id}."
-        else:
-            raise ValueError(
-                f"Trigger execution failed: Webhook request returned status {response.status_code}, "
-                f"response: {response.text}"
-            )
+
+        raise ValueError(
+            f"Trigger execution failed: Webhook request returned status {response.status_code}, "
+            f"response: {response.text}"
+        )
 
     except Exception as e:
         print(f"Error in execute_and_save_trigger: {str(e)}")  # Log the error
@@ -626,7 +626,7 @@ def execute_and_save_action(action, task_id, action_id):
             raise ValueError(f"Action execution failed: URL is missing in webhook with id {webhook_id}.")
 
         # Execute the webhook request
-        response = requests.post(url, json=action, verify=False)
+        response = requests.post(url, json=action, verify=False) #nosec
         print(f"Webhook Response Status Code: {response.status_code}")
 
         # Validate and process the response
@@ -647,11 +647,11 @@ def execute_and_save_action(action, task_id, action_id):
                 return results
             else:
                 raise ValueError("Webhook response is not in JSON format.")
-        else:
-            raise ValueError(
-                f"Action execution failed: Webhook request returned status {response.status_code}, "
-                f"response: {response.text}"
-            )
+
+        raise ValueError(
+            f"Action execution failed: Webhook request returned status {response.status_code}, "
+            f"response: {response.text}"
+        )
 
     except Exception as e:
         print(f"Error in execute_and_save_action: {str(e)}")

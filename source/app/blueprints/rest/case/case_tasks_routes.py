@@ -305,5 +305,5 @@ def case_task_action_response_by_id(task_id):
 
     if action_response:
         return response_success("Task action response fetched successfully", data=action_response)
-    else:
-        return response_error("No action response found for this task", 404)
+
+    return response_error("No action response found for this task", 404)

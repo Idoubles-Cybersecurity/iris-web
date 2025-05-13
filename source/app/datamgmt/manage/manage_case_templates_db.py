@@ -15,7 +15,6 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import marshmallow
-import requests
 import jsonschema
 from datetime import datetime
 from typing import List, Optional, Union
@@ -397,7 +396,7 @@ def get_triggers_by_case_template_id(case_template_id) -> CaseTemplate:
 
     return case_template.triggers or []
 
-def get_action_by_case_template_id_and_task_id(case_template_id, task_id, caseid) -> list:
+def get_action_by_case_template_id_and_task_id(case_template_id, task_id) -> list:
     """
     Retrieves the actions array for a given case_template_id and task_id.
 

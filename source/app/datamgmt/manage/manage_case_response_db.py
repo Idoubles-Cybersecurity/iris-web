@@ -14,14 +14,9 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-
-from datetime import datetime
-from typing import List, Optional, Union
-
-from app import db
+from typing import List, Optional
 from app.models.models import CaseResponse
 from app.models.authorization import User
-from app.schema.marshables import CaseResponseSchema
 
 
 def get_case_responses_list_by_case_id(case_id: int) -> List[dict]:
@@ -90,9 +85,9 @@ def validate_case_response(data: dict, update: bool = False) -> Optional[str]:
             return "Action must be an integer."
 
         # Validate the body field if provided
-        if "body" in data:
-            if not isinstance(data["body"], dict):
-                return "Body must be a dictionary."
+        if "body" in data and not isinstance(data["body"], dict):
+            # if not isinstance(data["body"], dict):
+            return "Body must be a dictionary."
         
         # If all validations pass, return None
         return None

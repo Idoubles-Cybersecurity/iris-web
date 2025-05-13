@@ -38,23 +38,15 @@ from app.blueprints.rest.parsing import parse_comma_separated_identifiers
 from app.blueprints.rest.endpoints import endpoint_deprecated
 from app.datamgmt.alerts.alerts_db import get_alert_status_by_name
 from app.datamgmt.case.case_db import get_case
-from app.datamgmt.client.client_db import get_client_list
 from app.datamgmt.iris_engine.modules_db import get_pipelines_args_from_name
 from app.datamgmt.iris_engine.modules_db import iris_module_exists
-from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
-from app.datamgmt.manage.manage_case_classifications_db import get_case_classifications_list
-from app.datamgmt.manage.manage_case_state_db import get_case_states_list
-from app.datamgmt.manage.manage_case_templates_db import get_case_templates_list, get_triggers_by_case_template_id
+from app.datamgmt.manage.manage_case_templates_db import  get_triggers_by_case_template_id
 from app.datamgmt.manage.manage_cases_db import execute_and_save_trigger, get_filtered_cases
 from app.datamgmt.manage.manage_cases_db import close_case, map_alert_resolution_to_case_status
 from app.datamgmt.manage.manage_cases_db import get_case_details_rt
-from app.datamgmt.manage.manage_cases_db import get_case_protagonists
 from app.datamgmt.manage.manage_cases_db import list_cases_dict
 from app.datamgmt.manage.manage_cases_db import reopen_case
-from app.datamgmt.manage.manage_common import get_severities_list
-from app.forms import AddCaseForm
 from app.iris_engine.access_control.utils import ac_fast_check_current_user_has_case_access
-from app.iris_engine.access_control.utils import ac_current_user_has_permission
 from app.iris_engine.module_handler.module_handler import call_modules_hook
 from app.iris_engine.module_handler.module_handler import configure_module_on_init
 from app.iris_engine.module_handler.module_handler import instantiate_module_from_name

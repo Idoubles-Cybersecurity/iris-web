@@ -79,11 +79,11 @@ def create_safe(session, model, **kwargs):
     instance = session.query(model).filter_by(**kwargs).first()
     if instance:
         return False
-    else:
-        instance = model(**kwargs)
-        session.add(instance)
-        session.commit()
-        return True
+
+    instance = model(**kwargs)
+    session.add(instance)
+    session.commit()
+    return True
 
 
 def create_safe_limited(session, model, keywords_list, **kwargs):
@@ -95,11 +95,11 @@ def create_safe_limited(session, model, keywords_list, **kwargs):
     instance = session.query(model).filter_by(**kwargs).first()
     if instance:
         return False
-    else:
-        instance = model(**kwargs)
-        session.add(instance)
-        session.commit()
-        return True
+
+    instance = model(**kwargs)
+    session.add(instance)
+    session.commit()
+    return True
 
 
 def get_by_value_or_create(session, model, fieldname, **kwargs):
@@ -107,22 +107,22 @@ def get_by_value_or_create(session, model, fieldname, **kwargs):
     instance = session.query(model).filter_by(**select_value).first()
     if instance:
         return instance
-    else:
-        instance = model(**kwargs)
-        session.add(instance)
-        session.commit()
-        return instance
+
+    instance = model(**kwargs)
+    session.add(instance)
+    session.commit()
+    return instance
 
 
 def get_or_create(session, model, **kwargs):
     instance = session.query(model).filter_by(**kwargs).first()
     if instance:
         return instance
-    else:
-        instance = model(**kwargs)
-        session.add(instance)
-        session.commit()
-        return instance
+
+    instance = model(**kwargs)
+    session.add(instance)
+    session.commit()
+    return instance
 
 
 class Client(db.Model):
@@ -755,10 +755,10 @@ class Tags(db.Model):
         existing_tag = self.get_by_title(self.tag_title)
         if existing_tag is not None:
             return existing_tag
-        else:
-            db.session.add(self)
-            db.session.commit()
-            return self
+
+        db.session.add(self)
+        db.session.commit()
+        return self
 
     @classmethod
     def get_by_title(cls, tag_title):

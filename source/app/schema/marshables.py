@@ -368,7 +368,8 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
 
         if (password == '' or password is None) and data.get('user_id') != 0:
             # Update
-            data.pop('user_password') if 'user_password' in data else None
+            data.pop("user_password", None)
+            # data.pop('user_password') if 'user_password' in data else None
 
         else:
             password_error = ""
@@ -851,7 +852,7 @@ class WebhookSchema(ma.Schema):
     url: Optional[str] = fields.String(allow_none=True, missing="")
     payload_schema: Optional[dict] = fields.Dict(allow_none=True, missing={})
 
-    def validate_string_or_list(value: Union[str, List[str]]) -> Union[str, List[str]]:
+    def validate_string_or_list(self, value: Union[str, List[str]]) -> Union[str, List[str]]:
         """Validates that a value is a string or a list of strings.
 
         This method validates that a value is either a string or a list of strings. If the value is a list, it also
@@ -875,7 +876,7 @@ class WebhookSchema(ma.Schema):
                     raise ValidationError('All items in list must be strings')
         return value
 
-    def validate_string_or_list_of_dict(value: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
+    def validate_string_or_list_of_dict(self, value: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
         """Validates that a value is a string or a list of dictionaries with string values.
 
         This method validates that a value is either a string or a list of dictionaries with string values. If the value

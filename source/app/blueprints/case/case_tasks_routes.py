@@ -15,7 +15,7 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-
+import traceback
 # IMPORTS ------------------------------------------------
 from datetime import datetime
 import json
@@ -31,7 +31,6 @@ from flask_wtf import FlaskForm
 
 from app import db
 from app.blueprints.rest.case_comments import case_comment_update
-# from app.blueprints.case.case_comments import case_comment_update
 from app.datamgmt.case.case_db import get_case
 from app.datamgmt.case.case_tasks_db import add_comment_to_task
 from app.datamgmt.case.case_tasks_db import add_task
@@ -41,7 +40,6 @@ from app.datamgmt.case.case_tasks_db import get_case_task_comment
 from app.datamgmt.case.case_tasks_db import get_case_task_comments
 from app.datamgmt.case.case_tasks_db import get_case_tasks_comments_count
 from app.datamgmt.case.case_tasks_db import get_task
-# from app.datamgmt.case.case_tasks_db import get_task_with_assignees
 from app.datamgmt.case.case_tasks_db import get_tasks_status
 from app.datamgmt.case.case_tasks_db import get_tasks_with_assignees
 from app.datamgmt.case.case_tasks_db import update_task_assignees
@@ -52,7 +50,7 @@ from app.datamgmt.states import update_tasks_state
 from app.forms import CaseTaskForm
 from app.iris_engine.module_handler.module_handler import call_modules_hook
 from app.iris_engine.utils.tracker import track_activity
-from app.models.authorization import CaseAccessLevel, Permissions
+from app.models.authorization import CaseAccessLevel
 from app.models.authorization import User
 from app.models.models import CaseTasks
 from app.schema.marshables import CaseTaskSchema
@@ -131,8 +129,7 @@ def case_get_tasks_state(caseid):
     os = get_tasks_state(caseid=caseid)
     if os:
         return response_success(data=os)
-    else:
-        return response_error('No tasks state for this case.')
+    return response_error('No tasks state for this case.')
 
 @case_tasks_blueprint.route('/case/tasks/status/update/<int:cur_id>', methods=['POST'])
 @ac_api_case_requires(CaseAccessLevel.full_access)
@@ -147,11 +144,9 @@ def case_task_statusupdate(cur_id, caseid):
             task_schema = CaseTaskSchema()
 
             return response_success("Task status updated", data=task_schema.dump(task))
-        else:
-            return response_error("Invalid status")
 
-    else:
-        return response_error("Invalid request")
+        return response_error("Invalid status")
+    return response_error("Invalid request")
 
 
 @case_tasks_blueprint.route('/case/tasks/add/modal', methods=['GET'])
@@ -233,7 +228,7 @@ def case_task_view_modal(cur_id, caseid, url_redir):
     user_name, = User.query.with_entities(User.name).filter(User.id == task.task_userid_update).first()
     comments_map = get_case_tasks_comments_count([task.id])
     taskActionResponses = get_task_responses_list(task.id) 
-        # Serialize datetime objects for rendering
+    # Serialize datetime objects for rendering
     return render_template("modal_add_case_task.html", form=form, task=task, user_name=user_name,
                            comments_map=comments_map, attributes=task.custom_attributes ,taskActionResponses=taskActionResponses)
 
@@ -252,7 +247,7 @@ def case_task_action_response(cur_id):
             if taskActionResponse.get('body'):
                 try:
                     taskActionResponse['body'] = json.dumps(taskActionResponse['body'])
-                except (TypeError, ValueError) as e:
+                except (TypeError, ValueError):
                     taskActionResponse['body'] = str(taskActionResponse['body'])
         
         return jsonify({"success": True, "data": taskActionResponses})  # Properly return as JSON
@@ -267,8 +262,7 @@ def case_task_action_response_by_id(cur_id):
 
     if action_response:
         return response_success("Task action response fetched successfully", data=action_response)
-    else:
-        return response_error("No action response found for this task", 404)
+    return response_error("No action response found for this task", 404)
 
 
 

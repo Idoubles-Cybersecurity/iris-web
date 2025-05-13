@@ -50,7 +50,6 @@ def list_webhooks():
     Returns:
         Response: List of webhooks
     """
-    case_id = request.args.get("cid")  # Use 'cid' since it's coming from query parameters
     webhooks = get_webhooks_list()
 
     # Return the attributes
@@ -64,9 +63,7 @@ def list_webhooks_by_case_template_id(cur_id, task_id):
     Returns:
         Response: List of webhooks by case template id
     """
-
-    caseid = request.args.get('cid')
-    webhooks = get_action_by_case_template_id_and_task_id(cur_id, task_id, caseid)
+    webhooks = get_action_by_case_template_id_and_task_id(cur_id, task_id)
 
     # Return the attributes
     return response_success("",data = webhooks)
