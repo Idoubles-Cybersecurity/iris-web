@@ -1,4 +1,3 @@
-# IMPORTS ------------------------------------------------
 import json
 from flask import Blueprint, abort, jsonify
 from flask import redirect
@@ -225,7 +224,6 @@ def add_webhook(caseid):
 def update_webhook(cur_id):
     if not request.is_json:
         return response_error("Invalid request")
-
     webhook = get_webhook_by_id(cur_id)
     if not webhook:
         return response_error(f"Invalid webhook ID {cur_id}")
@@ -251,9 +249,9 @@ def update_webhook(cur_id):
 
     try:
         # validate the request data and load it into an instance of the `Webhook` object
-        webhook_data = webhook_schema.load(updated_webhook_dict, partial=True)
+        webhook_schema.load(updated_webhook_dict, instance=webhook, partial=True)
         # update the existing `webhook` object with the new data
-        webhook.update_from_dict(webhook_data)
+        # webhook.update_from_dict(webhook_data)
         # commit the changes to the database
         db.session.commit()
     except ValidationError as error:

@@ -19,8 +19,8 @@ import uuid
 
 from datetime import datetime
 from flask_login import current_user
-# IMPORTS ------------------------------------------------
-from sqlalchemy import BigInteger, CheckConstraint
+from sqlalchemy import BigInteger
+from sqlalchemy import CheckConstraint
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import Date
@@ -43,7 +43,7 @@ from app.datamgmt.states import update_ioc_state
 from app.datamgmt.states import update_notes_state
 from app.datamgmt.states import update_tasks_state
 from app.datamgmt.states import update_timeline_state
-from app.models.models import Client, Base
+from app.models.models import Client
 
 
 class Cases(db.Model):

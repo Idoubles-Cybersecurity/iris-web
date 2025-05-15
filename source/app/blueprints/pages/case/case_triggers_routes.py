@@ -1,4 +1,3 @@
-# IMPORTS ------------------------------------------------
 from flask import Blueprint, jsonify, request, redirect, render_template, url_for
 import json
 from flask_wtf import FlaskForm

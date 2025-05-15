@@ -250,9 +250,9 @@ def update_case_template(cur_id):
 
     try:
         # validate the request data and load it into an instance of the `CaseTemplate` object
-        case_template_data = case_template_schema.load(updated_case_template_dict, partial=True)
+        case_template_data = case_template_schema.load(updated_case_template_dict, instance=case_template, partial=True)
         # update the existing `case_template` object with the new data
-        case_template.update_from_dict(case_template_data)
+        # case_template.update_from_dict(case_template_data)
         # commit the changes to the database
         db.session.commit()
     except ValidationError as error:

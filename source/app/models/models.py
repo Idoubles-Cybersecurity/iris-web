@@ -16,7 +16,6 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import datetime
-# IMPORTS ------------------------------------------------
 import enum
 import uuid
 
@@ -229,7 +228,7 @@ class EvidenceTypes(db.Model):
 
 
 class Webhook(db.Model):
-    __tablename__ = 'webhooksss'
+    __tablename__ = 'webhooks'
 
     # Metadata
     id = Column(Integer, primary_key=True)
@@ -241,11 +240,7 @@ class Webhook(db.Model):
     header_auth = Column(JSON, nullable=True)
     payload_schema = Column(JSON, nullable=True)
     url = Column(String, nullable=True)
-
     created_by_user = relationship('User')
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
 
     def update_from_dict(self, data: dict):
         for field, value in data.items():
@@ -277,8 +272,8 @@ class CaseTemplate(db.Model):
 
     created_by_user = relationship('User')
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    # def __init__(self, **kwargs):
+    #     super().__init__(**kwargs)
 
     def update_from_dict(self, data: dict):
         for field, value in data.items():

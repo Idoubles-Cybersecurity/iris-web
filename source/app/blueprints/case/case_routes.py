@@ -18,7 +18,6 @@
 
 import binascii
 import marshmallow
-# IMPORTS ------------------------------------------------
 import traceback
 from flask import Blueprint
 from flask import redirect

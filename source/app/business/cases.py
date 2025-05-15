@@ -80,9 +80,8 @@ def cases_exists(identifier):
 def cases_create(request_data):
     # TODO remove caseid doesn't seems to be useful for call_modules_hook => remove argument
     request_data = call_modules_hook('on_preload_case_create', request_data, None)
-    case_template_id = request_data.pop('case_template_id', None)
     case = _load(request_data)
-
+    case_template_id = request_data.get('case_template_id')
     case.owner_id = current_user.id
     case.severity_id = 4
     case.case_template_id = case_template_id
