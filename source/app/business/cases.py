@@ -25,7 +25,7 @@ from flask_login import current_user
 from flask import jsonify, current_app, g
 from marshmallow.exceptions import ValidationError
 
-from app import app
+from app import app, celery
 from app import db
 from app.util import add_obj_history_entry
 from app.schema.marshables import CaseSchema
@@ -76,6 +76,13 @@ def cases_get_by_identifier(case_identifier):
 def cases_exists(identifier):
     return case_db_exists(identifier)
 
+# Function to execute a trigger in background celery worker
+@celery.task(bind=True)
+def execute_trigger_with_context(self, trigger, case_id):
+    # Make sure each thread runs within the Flask app context
+    with app.app_context():
+        print(f"Trigger executed for case: {trigger}")
+        execute_and_save_trigger(trigger, case_id)
 
 def cases_create(request_data):
     # TODO remove caseid doesn't seems to be useful for call_modules_hook => remove argument
@@ -117,17 +124,13 @@ def cases_create(request_data):
     if not triggers:
         raise BusinessProcessingError("No triggers found for the provided case_template_id.")
 
-    # Function to execute a trigger in a new thread with app context
-    def execute_trigger_with_context(trigger):
-        # Make sure each thread runs within the Flask app context
-        with app.app_context():
-            print(f"Trigger executed for case: {trigger}")
-            execute_and_save_trigger(trigger, case.case_id)
-
     # Start a new thread for each trigger
     for trigger in triggers:
-        thread = Thread(target=execute_trigger_with_context, args=(trigger,))
-        thread.start()
+        if isinstance(trigger, dict):
+            trigger_data = trigger
+        else:
+            trigger_data = trigger.to_dict()
+        execute_trigger_with_context.apply_async(args=[trigger_data, case.case_id])
     return case
 
 

@@ -32,6 +32,7 @@ from sqlalchemy import TIMESTAMP
 from sqlalchemy import Text
 from sqlalchemy import create_engine
 from sqlalchemy import text
+from sqlalchemy.inspection import inspect
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
@@ -272,8 +273,19 @@ class CaseTemplate(db.Model):
 
     created_by_user = relationship('User')
 
-    # def __init__(self, **kwargs):
-    #     super().__init__(**kwargs)
+    def to_dict(self, include_relationships=False):
+        result = {}
+        for c in inspect(self).mapper.column_attrs:
+            value = getattr(self, c.key)
+            # Convert datetime objects to ISO format
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[c.key] = value
+
+        if include_relationships:
+            result["created_by_user"] = self.created_by_user.to_dict() if self.created_by_user else None
+
+        return result
 
     def update_from_dict(self, data: dict):
         for field, value in data.items():
