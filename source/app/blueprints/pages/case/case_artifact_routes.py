@@ -171,7 +171,7 @@ def case_upload_artifact(caseid):
             # Artifact value must not be empty
             if not row.get("artifact_value"):
                 errors.append(f"Empty Artifact value for row {index}")
-                track_activity(f"Attempted to upload an empty Artifact value")
+                track_activity("Attempted to upload an empty Artifact value")
                 index += 1
                 continue
 
@@ -303,6 +303,7 @@ def case_update_artifact(cur_id, caseid):
     except BusinessProcessingError as e:
         return response_error(e.get_message(), data=e.get_data())
 
+
 @case_artifact_blueprint.route('/case/artifact/escalate/<int:cur_id>', methods=['POST'])
 @ac_api_case_requires(CaseAccessLevel.full_access)
 def case_escalate_artifact(cur_id, caseid):
@@ -312,6 +313,7 @@ def case_escalate_artifact(cur_id, caseid):
 
     except BusinessProcessingError as e:
         return response_error(e.get_message())
+
 
 @case_artifact_blueprint.route('/case/artifact/<int:cur_id>/comments/modal', methods=['GET'])
 @ac_case_requires(CaseAccessLevel.read_only, CaseAccessLevel.full_access)

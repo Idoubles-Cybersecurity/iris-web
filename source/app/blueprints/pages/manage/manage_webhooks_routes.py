@@ -1,6 +1,6 @@
 # IMPORTS ------------------------------------------------
 import json
-from flask import Blueprint, abort, jsonify
+from flask import Blueprint
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -50,7 +50,6 @@ def list_webhooks():
     Returns:
         Response: List of webhooks
     """
-    case_id = request.args.get("cid")  # Use 'cid' since it's coming from query parameters
     webhooks = get_webhooks_list()
 
     # Return the attributes
@@ -69,10 +68,11 @@ def list_webhooks_by_case_template_id(cur_id, task_id):
     webhooks = get_action_by_case_template_id_and_task_id(cur_id, task_id, caseid)
 
     # Return the attributes
-    return response_success("",data = webhooks)
+    return response_success("", data=webhooks)
+
 
 @manage_webhooks_blueprint.route('/manage/webhooks/<int:cur_id>', methods=['GET'])
-@ac_api_requires(Permissions.webhooks_read, Permissions.tasks_execute)
+@ac_api_requires(Permissions.webhooks_read)
 def get_webhook(cur_id):
     """Fetch a webhook by ID
     Args:
