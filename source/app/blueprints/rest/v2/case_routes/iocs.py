@@ -29,6 +29,7 @@ from app.blueprints.rest.endpoints import response_api_not_found
 from app.blueprints.rest.endpoints import response_api_error
 from app.blueprints.rest.endpoints import response_api_success
 from app.blueprints.rest.endpoints import response_api_paginated
+from app.blueprints.rest.endpoints import response
 from app.blueprints.rest.parsing import parse_pagination_parameters
 from app.blueprints.rest.parsing import parse_fields_parameters
 from app.business.errors import BusinessProcessingError
@@ -45,6 +46,7 @@ from app.models.iocs import Ioc
 from app.iris_engine.module_handler.module_handler import call_deprecated_on_preload_modules_hook
 from app.schema.marshables import IocSchema
 from app.business.cases import cases_exists
+from app.datamgmt.case.case_iocs_db import get_linked_cases_for_ioc
 
 
 class IocsOperations:
@@ -198,3 +200,38 @@ def update_ioc(case_identifier, identifier):
 @ac_api_requires()
 def delete_case_ioc(case_identifier, identifier):
     return iocs_operations.delete(case_identifier, identifier)
+
+
+@case_iocs_blueprint.get('/<int:identifier>/linked-cases')
+@ac_api_requires()
+def get_ioc_linked_cases(case_identifier, identifier):
+    """Get all cases linked to this IOC with pagination."""
+    try:
+        # Verify the IOC exists and user has access to the current case
+        ioc = iocs_get(identifier)
+        if not ac_fast_check_current_user_has_case_access(case_identifier,
+                                                          [CaseAccessLevel.read_only, CaseAccessLevel.full_access]):
+            return ac_api_return_access_denied(caseid=case_identifier)
+
+        # Get pagination parameters from request
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        
+        # Limit per_page to reasonable values
+        per_page = min(per_page, 100)
+        
+        # Get linked cases with pagination
+        result = get_linked_cases_for_ioc(identifier, case_identifier, page=page, per_page=per_page)
+        
+        # Wrap in standard success response format
+        return response(200, data={
+            'status': 'success',
+            'message': '',
+            'data': result
+        })
+        
+    except ObjectNotFoundError:
+        return response_api_not_found()
+    except Exception as e:
+        logger.error(f"Error getting linked cases for IOC {identifier}: {e}")
+        return response_api_error("Internal server error")

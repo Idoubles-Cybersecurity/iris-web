@@ -183,6 +183,44 @@ def get_ioc_links(ioc_id, caseid):
     return ioc_link
 
 
+def get_linked_cases_for_ioc(ioc_id, caseid, page=1, per_page=50):
+    """Get linked cases for an IOC with pagination support."""
+    search_condition = and_(Cases.case_id.in_([]))
+
+    user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+    if user_search_limitations:
+        search_condition = and_(Cases.case_id.in_(user_search_limitations))
+
+    # Base query
+    query = (IocLink.query.with_entities(
+        Cases.case_id,
+        Cases.name.label('case_name'),
+        Client.name.label('client_name'),
+        Cases.open_date
+    ).filter(and_(
+        IocLink.ioc_id == ioc_id,
+        IocLink.case_id != caseid,
+        search_condition)
+    ).join(IocLink.case)
+     .join(Cases.client)
+     .order_by(Cases.open_date.desc()))
+
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    paginated_query = query.limit(per_page).offset((page - 1) * per_page)
+    results = paginated_query.all()
+
+    return {
+        'cases': [row._asdict() for row in results],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page
+    }
+
+
 def find_ioc(ioc_value, ioc_type_id):
     ioc = Ioc.query.filter(Ioc.ioc_value == ioc_value,
                            Ioc.ioc_type_id == ioc_type_id).first()
@@ -383,10 +421,16 @@ def get_ioc_by_value(ioc_value, caseid=None):
 
 
 def case_iocs_db_exists(ioc: Ioc) -> bool:
-    """Return True if an IOC with same value and type exists (excluding same id)."""
-    existing = Ioc.query.filter(
+    """Return True if an IOC with same value and type exists in the same case (excluding same id)."""
+    # Check if this IOC already exists in this specific case
+    case_id = getattr(ioc, 'case_id', None)
+    if not case_id:
+        return False
+    
+    existing = Ioc.query.join(IocLink).filter(
         func.lower(Ioc.ioc_value) == func.lower(ioc.ioc_value),
         Ioc.ioc_type_id == ioc.ioc_type_id,
+        IocLink.case_id == case_id,
         Ioc.ioc_id != getattr(ioc, 'ioc_id', None)
     ).first()
 

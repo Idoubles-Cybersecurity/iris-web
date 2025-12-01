@@ -74,7 +74,7 @@ def case_list_ioc(caseid):
         out = ioc._asdict()
 
         # Get links of the IoCs seen in other cases
-        ial = get_ioc_links(ioc.ioc_id)
+        ial = get_ioc_links(ioc.ioc_id, caseid)
 
         out['link'] = [row._asdict() for row in ial]
         # Legacy, must be changed next version
