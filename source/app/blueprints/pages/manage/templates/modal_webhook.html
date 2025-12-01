@@ -101,47 +101,40 @@
                   An webhook is defined as below.
                   <pre>
 
-                    {
-                      "name": "Webhook Name",
-                      "header_auth": [
-                          {
-                              "key": "Webhook Header Key",
-                              "value": "Webhook Header Value"
-                          }
-                      ],
-                      "payload_schema": {
-                          "type": "Webhook Payload Type",
-                          "description": "Webhook payload Description",
-                          "minItems": 1,
-                          "uniqueItems": true,
-                          "items": {
-                              "type": "object",
-                              "required": [
-                                  "property"
-                              ],
-                              "properties": {
-                                  "property 1": {
-                                      "type": "property type",
-                                      "minLength": 1
-                                  },
-                                  "property 2": {
-                                      "type": "property type",
-                                      "minLength": 1
-                                  },
-                                  "property 3": {
-                                      "type": "object",
-                                      "properties": {
-                                          "sub property 1": {
-                                              "type": "property type",
-                                              "minLength": 1
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      },
-                      "url": "http://webhookexampleurl.com"
-                  }
+{
+    "name": "Webhook Name",
+    "header_auth": [],
+    "payload_schema": {
+        "type": "object",
+        "required": [
+            "property 1",
+            "property 2",
+            "property 3"
+        ],
+        "properties": {
+            "property 1": {
+                "title": "property 1 name",
+                "type": "property 1 type",
+                "enum": [
+                    "value 1",
+                    "value 2"
+                ],
+                "default": "default property 1 value"
+            },
+            "property 2": {
+                "title": "property 2 name",
+                "type": "property 2 type",
+                "default": ""
+            },
+            "property 3": {
+                "title": "property 3 name",
+                "type": "property 3 type",
+                "default": ""
+            }
+        }
+    },
+    "url": "http://webhookexampleurl.com"
+}
                                     </pre
                   >
                   <p>
@@ -163,7 +156,7 @@
               ><button
                 type="button"
                 class="btn btn-sm ml-auto"
-                onclick="downloadwebhookDefinition();"
+                onclick="downloadCaseTemplateDefinition();"
               >
                 Download definition
               </button>
