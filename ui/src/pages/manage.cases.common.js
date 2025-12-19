@@ -75,9 +75,10 @@ function remove_case(id) {
         .then((willDelete) => {
             if (willDelete) {
                 delete_request_api(`/api/v2/cases/${id}`)
-                .done((data, textStatus) => {
-                    if (textStatus !== 'nocontent') {
-                        notify_error(data);
+                .done((data, textStatus, jqXHR) => {
+                    // 204 No Content returns success with no data
+                    if (jqXHR.status !== 204 && textStatus !== 'success') {
+                        notify_error(data || 'Unknown error');
                         return;
                     }
                     notify_success('Case successfully deleted');

@@ -348,7 +348,6 @@ function delete_request_api(uri, data, propagate_api_error, beforeSend_fn) {
         url: uri + case_param(),
         type: 'DELETE',
         data: data,
-        dataType: "json",
         beforeSend: function(jqXHR, settings) {
              sendBefore(beforeSend_fn, settings, jqXHR);
         },
@@ -511,7 +510,7 @@ function notify_redirect() {
 
 function case_param() {
     var params = {
-        cid: get_caseid
+        cid: get_caseid()
     }
     return '?'+ $.param(params);
 }

@@ -57,6 +57,7 @@ from app.models.models import Client
 from app.models.models import DataStoreFile
 from app.models.models import DataStorePath
 from app.models.models import IocAssetLink
+from app.models.models import IocLink
 from app.models.models import Notes
 from app.models.models import NotesGroup
 from app.models.models import NotesGroupLink
@@ -331,6 +332,19 @@ def get_case_details_rt(case_id):
 def _delete_iocs(case_identifier):
     # TODO should do this with the 2.0 SQLAlchemy API
     # TODO maybe this can be performed automatically with cascades
+    
+    # Get all IOCs in this case
+    ioc_ids = Ioc.query.with_entities(Ioc.ioc_id).filter(Ioc.case_id == case_identifier).all()
+    ioc_ids = [ioc.ioc_id for ioc in ioc_ids]
+    
+    if ioc_ids:
+        # Delete IOC links first (foreign key constraint)
+        IocLink.query.filter(IocLink.ioc_id.in_(ioc_ids)).delete(synchronize_session='fetch')
+        
+        # Delete IOC-asset links
+        IocAssetLink.query.filter(IocAssetLink.ioc_id.in_(ioc_ids)).delete(synchronize_session='fetch')
+    
+    # Delete IOC comments
     com_ids = IocComments.query.with_entities(
         IocComments.comment_id
     ).join(
@@ -346,6 +360,8 @@ def _delete_iocs(case_identifier):
     Comments.query.filter(
         Comments.comment_id.in_(com_ids)
     ).delete()
+    
+    # Finally delete the IOCs themselves
     Ioc.query.filter(Ioc.case_id == case_identifier).delete()
 
 
