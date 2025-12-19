@@ -27,6 +27,8 @@ from app.models.models import CaseEventCategory
 from app.models.models import CaseEventsAssets
 from app.models.models import CaseEventsIoc
 from app.models.models import CaseEventsArtifact
+from app.models.models import Artifact
+from app.models.models import ArtifactLink
 from app.models.cases import CasesEvent
 from app.models.comments import Comments
 from app.models.comments import EventComments
@@ -377,6 +379,30 @@ def get_case_iocs_for_tm(caseid):
         })
 
     return iocs
+
+
+def get_case_artifacts_for_tm(caseid):
+    """
+    Return a list of all artifacts linked to the current case
+    :return: Tuple of artifacts
+    """
+    artifacts = [{'artifact_name': '', 'artifact_id': '0'}]
+
+    artifacts_list = ArtifactLink.query.with_entities(
+        Artifact.artifact_value,
+        Artifact.artifact_id
+    ).filter(
+        ArtifactLink.case_id == caseid,
+        ArtifactLink.artifact_id == Artifact.artifact_id
+    ).all()
+
+    for artifact in artifacts_list:
+        artifacts.append({
+            'artifact_name': f'{artifact.artifact_value}',
+            'artifact_id': artifact.artifact_id
+        })
+
+    return artifacts
 
 
 def delete_event(event):

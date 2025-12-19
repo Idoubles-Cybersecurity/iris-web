@@ -132,7 +132,9 @@ def case_add_artifact(caseid):
 
     try:
         artifact, msg = create(request.get_json(), caseid)
-        return response_success(msg, data=artifact_schema.dump(artifact))
+        result = artifact_schema.dump(artifact)
+        result['case_id'] = caseid
+        return response_success(msg, data=result)
     except BusinessProcessingError as e:
         return response_error(e.get_message(), data=e.get_data())
 
