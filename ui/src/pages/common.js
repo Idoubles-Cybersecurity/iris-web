@@ -993,7 +993,7 @@ function get_showdown_convert() {
         strikethrough: true,
         tasklists: true,
         ghCodeBlocks: true,
-        backslashEscapesHTMLTags: true,
+        backslashEscapesHTMLTags: false,
         splitAdjacentBlockquotes: true,
         extensions: [createSanitizeExtensionForImg, 'bootstrap-tables']
     });
@@ -1004,9 +1004,9 @@ function do_md_filter_xss(html) {
         stripIgnoreTag: false,
         whiteList: {
                 i: ['class', "title"],
-                a: ['href', 'title', 'target'],
+                a: ['href', 'title', 'target', 'onclick', 'style'],
                 img: ['src', 'alt', 'title', 'width', 'height'],
-                div: ['class'],
+                div: ['class', 'style'],
                 p: [],
                 hr: [],
                 h1: [], h2: [], h3: [], h4: [], h5: [], h6: [],

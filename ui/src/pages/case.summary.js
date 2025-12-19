@@ -404,7 +404,7 @@ $(document).ready(function() {
         let converter = get_showdown_convert();
         let html = converter.makeHtml(do_md_filter_xss(editor.getSession().getValue()));
 
-        target.innerHTML = do_md_filter_xss(html);
+        target.innerHTML = html;
 
     });
 
