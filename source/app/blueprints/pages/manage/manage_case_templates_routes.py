@@ -76,7 +76,6 @@ def case_template_modal(cur_id, caseid, url_redir):
         "tasks": case_template.tasks,
         "note_directories": case_template.note_directories,
         "classification": case_template.classification,
-        "actions": case_template.actions,
         "triggers": case_template.triggers
     }
 

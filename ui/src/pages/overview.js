@@ -22,17 +22,37 @@ let OverviewTable = $("#overview_table").DataTable({
                 return data;
           }
         },
-      {
-          visible: false, // set visibility
-          searchable: true, // set searchable
-          "data": "severity", // field in data
-            "render": function (data, type, row, meta) {
-                  if (data != null && (type === 'filter'  || type === 'sort' || type === 'display' || type === 'search')) {
-                    return data.severity_name;
-                  }
-                return data;
-            }
-      },
+            {
+                    visible: true, // show severity in overview
+                    searchable: true, // set searchable
+                    "data": "severity", // field in data
+                        "render": function (data, type, row, meta) {
+                                    if (!data) {
+                                        return data;
+                                    }
+
+                                    const sev = data.severity_name || data;
+                                    if (type === 'display') {
+                                        let badgeClass = 'badge-secondary';
+                                        const sevLower = sev.toLowerCase();
+                                        if (sevLower === 'critical') {
+                                            badgeClass = 'badge-danger';
+                                        } else if (sevLower === 'high') {
+                                            badgeClass = 'bg-warning-gradient text-dark';
+                                        } else if (sevLower === 'medium') {
+                                            badgeClass = 'badge-info';
+                                        } else if (sevLower === 'low') {
+                                            badgeClass = 'badge-light';
+                                        }
+                                        return `<span class="badge badge-pill ${badgeClass}"><i class="fa-solid fa-bolt mr-1"></i>${sanitizeHTML(sev)}</span>`;
+                                    }
+
+                                    if (type === 'filter'  || type === 'sort' || type === 'search') {
+                                        return sev;
+                                    }
+                                return data;
+                        }
+            },
       {
         visible: true, // set visibility
         searchable: true, // set searchable

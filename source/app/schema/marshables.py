@@ -1022,8 +1022,7 @@ class CaseTemplateSchema(ma.Schema):
 
     actions: Optional[List[Dict[str, Union[str, List[str]]]]] = fields.List(
         fields.Dict(keys=fields.Str(), values=fields.Raw(validate=[validate_string_or_list])),
-        allow_none=True,
-        missing=[]
+        allow_none=True
     )
 
     triggers: Optional[List[Dict[str, Union[str, List[str]]]]] = fields.List(
@@ -1833,6 +1832,10 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
         """
         if data.get('classification_id') == "":
             del data['classification_id']
+
+        # Drop empty state_id values to avoid integer validation errors when UI sends an empty string
+        if data.get('state_id') == "":
+            del data['state_id']
 
         return data
 
@@ -2688,6 +2691,10 @@ class CaseSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
         """
         if data.get('classification_id') == "":
             del data['classification_id']
+
+        # Drop empty state_id values to avoid integer validation errors when UI sends an empty string
+        if data.get('state_id') == "":
+            del data['state_id']
 
         return data
 

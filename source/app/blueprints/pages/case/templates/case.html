@@ -16,10 +16,12 @@
 
     <div class="content">
         {% if case.close_date %}
-        <div class="panel-header bg-close-gradient">
-            {% else %}
-            <div class="panel-header bg-info-gradient">
-                {% endif %}
+                <div class="panel-header bg-close-gradient">
+                    {% elif case.severity and case.severity.severity_name == 'Critical' %}
+                    <div class="panel-header bg-danger-gradient">
+                    {% else %}
+                    <div class="panel-header bg-info-gradient">
+                        {% endif %}
                 <div class="page-inner py-5">
                     <div class="d-flex align-items-left align-items-md-center flex-column flex-md-row mt--3">
                         <div class="col">

@@ -257,7 +257,7 @@ class CaseTemplate(db.Model):
     tasks = Column(JSON, nullable=True)
     note_directories = Column(JSON, nullable=True)
     classification = Column(String, nullable=True)
-    actions = Column(JSON, nullable=True)
+    actions = Column(JSON, nullable=True, default=None)
     triggers = Column(JSON, nullable=True)
     input_params = Column(JSON, nullable=True)
 
