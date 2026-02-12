@@ -212,6 +212,9 @@ def cases_update(case: Cases, updated_case, protagonists, tags) -> Cases:
 
         updated_case = call_modules_hook('on_postload_case_update', data=updated_case, caseid=case.case_id)
 
+        db.session.add(updated_case)
+        db.session.commit()
+
         add_obj_history_entry(case, 'case info updated')
         track_activity(f'case updated "{updated_case.name}"', caseid=case.case_id)
 

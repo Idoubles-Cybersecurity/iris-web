@@ -82,6 +82,11 @@
                                         class="btn-rounded badge-pill hidden-caret btn-sm btn-light ml-2"><i
                                             class="fa-solid fa-shield-virus mr-1"></i>{{
                                         case.classification.name_expanded }}</span></h5>{% endif %}
+                                {% if case.owner and case.owner.id != current_user.id %}
+                                <h5 title="Assign ownership" style="cursor:pointer;"><span
+                                    class="btn-rounded badge-pill hidden-caret btn-sm btn-light ml-2" id="assign_to_me_btn" 
+                                    onclick="assign_case_to_me({{ case.case_id }});"><i class="fa-solid fa-hand mr-1"></i> Assign to me</span></h5>
+                                {% endif %}
                                 {% if case.alerts| length > 0 %}<h5 title="Alerts"><a
                                         class="btn-rounded badge-pill hidden-caret btn-sm btn-dark ml-2 bg-warning-gradient text-dark"
                                         href="/alerts?cid={{ case.case_id }}&sort=desc&case_id={{ case.case_id }}"

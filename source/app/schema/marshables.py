@@ -1806,6 +1806,7 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
     initial_date: Optional[datetime.datetime] = auto_field('initial_date', required=False)
     classification_id: Optional[int] = auto_field('classification_id', required=False, allow_none=True)
     reviewer_id: Optional[int] = auto_field('reviewer_id', required=False, allow_none=True)
+    owner_id: Optional[int] = auto_field('owner_id', required=False, allow_none=True)
     review_status: Optional[str] = auto_field('review_status', required=False, allow_none=True)
     severity_id: Optional[int] = auto_field('severity_id', required=False, allow_none=True)
 
@@ -2657,6 +2658,7 @@ class CaseSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
     initial_date: Optional[datetime.datetime] = auto_field('initial_date', required=False)
     classification_id: Optional[int] = auto_field('classification_id', required=False, allow_none=True)
     reviewer_id: Optional[int] = auto_field('reviewer_id', required=False, allow_none=True)
+    owner_id: Optional[int] = auto_field('owner_id', required=False, allow_none=True)
     access_level = fields.Integer(required=False)
 
     owner = ma.Nested(UserSchema, only=['id', 'user_name', 'user_login', 'user_email'])
