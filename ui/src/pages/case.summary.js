@@ -406,6 +406,9 @@ $(document).ready(function() {
 
         target.innerHTML = html;
 
+        // Attach click handlers to buttons to capture user ID for webhooks
+        attachWebhookButtonListeners(target);
+
     });
 
     edit_case_summary();
@@ -516,5 +519,199 @@ $(document).ready(function() {
      });
 
 });
+
+/**
+ * Attach click event listeners to HTML buttons rendered in case summary
+ * Captures user ID and sends it to the webhook when a button is clicked
+ * Specifically handles webhook links (href containing /hooks/webhook_ or /api/)
+ */
+function attachWebhookButtonListeners(containerElement) {
+    // Get all links and buttons in the rendered HTML that might be webhooks
+    const webhookElements = containerElement.querySelectorAll('a[href*="/hooks/webhook_"], a[href*="/api/v1/hooks/"], button, a[onclick*="webhook"], a[data-webhook]');
+    
+    webhookElements.forEach(element => {
+        // Check if this element already has a listener (to avoid duplicates)
+        if (element.dataset.webhookListenerAttached === 'true') {
+            return;
+        }
+        
+        element.dataset.webhookListenerAttached = 'true';
+        
+        // Store original onclick handler
+        const originalOnclick = element.onclick;
+        
+        // Remove target="_blank" to prevent default new window behavior
+        if (element.hasAttribute('target')) {
+            element.removeAttribute('target');
+        }
+        
+        // Replace onclick handler to intercept the confirmation result
+        if (originalOnclick) {
+            element.onclick = function(event) {
+                // Execute original onclick (the confirm dialog)
+                const result = originalOnclick.call(this, event);
+                
+                // If user clicked Cancel (result is false), stop here
+                if (result === false) {
+                    console.log('Action cancelled by user');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return false;
+                }
+                
+                // User clicked OK - prevent default navigation and add user_id
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Get webhook URL
+                let webhookUrl = element.href;
+                
+                // Fetch current user info from the API
+                get_request_api('/user/whoami')
+                    .done((data) => {
+                        if (data.status === 'success' && data.data) {
+                            const userId = data.data.user_id;
+                            
+                            // Add user ID as query parameter
+                            const separator = webhookUrl.includes('?') ? '&' : '?';
+                            const webhookUrlWithUser = webhookUrl + separator + 'user_id=' + encodeURIComponent(userId);
+                            
+                            console.log('Webhook triggered by user ID:', userId);
+                            console.log('Webhook URL:', webhookUrlWithUser);
+                            
+                            // Make the request with user context
+                            makeWebhookRequest(webhookUrlWithUser, {
+                                userId: userId
+                            });
+                        } else {
+                            console.error('Failed to get current user info');
+                            if (typeof notify_error === 'function') {
+                                notify_error('Unable to identify current user');
+                            }
+                        }
+                    })
+                    .fail((error) => {
+                        console.error('Error fetching user info:', error);
+                        if (typeof notify_error === 'function') {
+                            notify_error('Failed to retrieve user information');
+                        }
+                    });
+                
+                return false;
+            };
+        } else {
+            // No onclick handler, add regular click listener
+            element.addEventListener('click', function(event) {
+                // Get the webhook URL
+                let webhookUrl = element.href;
+                
+                if (webhookUrl && (webhookUrl.includes('/hooks/webhook_') || webhookUrl.includes('/api/v1/hooks/'))) {
+                    // Prevent default navigation
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // Fetch current user info from the API
+                    get_request_api('/user/whoami')
+                        .done((data) => {
+                            if (data.status === 'success' && data.data) {
+                                const userId = data.data.user_id;
+                                
+                                // Add user ID as query parameter
+                                const separator = webhookUrl.includes('?') ? '&' : '?';
+                                const webhookUrlWithUser = webhookUrl + separator + 'user_id=' + encodeURIComponent(userId);
+                                
+                                console.log('Webhook triggered by user ID:', userId);
+                                console.log('Webhook URL:', webhookUrlWithUser);
+                                
+                                // Make the request with user context
+                                makeWebhookRequest(webhookUrlWithUser, {
+                                    userId: userId
+                                });
+                            } else {
+                                console.error('Failed to get current user info');
+                                if (typeof notify_error === 'function') {
+                                    notify_error('Unable to identify current user');
+                                }
+                            }
+                        })
+                        .fail((error) => {
+                            console.error('Error fetching user info:', error);
+                            if (typeof notify_error === 'function') {
+                                notify_error('Failed to retrieve user information');
+                            }
+                        });
+                }
+            });
+        }
+    });
+}
+
+/**
+ * Make a webhook request with user context
+ * Opens the webhook URL in a new window/tab with user parameters appended
+ */
+function makeWebhookRequest(webhookUrl, userContext = {}) {
+    try {
+        console.log('Opening webhook URL with user context:', webhookUrl);
+        
+        // Open the webhook URL in a new window/tab
+        // This avoids CORS issues and matches the original behavior of target="_blank"
+        const newWindow = window.open(webhookUrl, '_blank');
+        
+        if (newWindow) {
+            console.log('Webhook window opened successfully');
+            if (typeof notify_success === 'function') {
+                notify_success('Webhook triggered successfully');
+            }
+        } else {
+            // Popup might be blocked
+            console.warn('Popup may have been blocked. Trying to open webhook URL...');
+            if (typeof notify_error === 'function') {
+                notify_error('Webhook popup was blocked. Please check your browser settings.');
+            }
+        }
+    } catch (error) {
+        console.error('Webhook error:', error);
+        if (typeof notify_error === 'function') {
+            notify_error('Webhook trigger failed: ' + error.message);
+        }
+    }
+}
+
+/**
+ * Enhanced webhook trigger function to include user ID in the payload
+ * Can be used to manually trigger webhooks with user context
+ */
+function triggerWebhookWithUserId(webhookUrl, payload = {}) {
+    // Fetch current user info from the API to ensure we have the correct logged-in user
+    get_request_api('/user/whoami')
+        .done((data) => {
+            if (data.status === 'success' && data.data) {
+                const userId = data.data.user_id;
+                
+                // Add user information to the URL as query parameter
+                const separator = webhookUrl.includes('?') ? '&' : '?';
+                const webhookUrlWithUser = webhookUrl + separator + 'user_id=' + encodeURIComponent(userId);
+                
+                // Send webhook with user context
+                makeWebhookRequest(webhookUrlWithUser, {
+                    userId: userId,
+                    payload: payload
+                });
+            } else {
+                console.error('Failed to get current user info');
+                if (typeof notify_error === 'function') {
+                    notify_error('Unable to identify current user');
+                }
+            }
+        })
+        .fail((error) => {
+            console.error('Error fetching user info:', error);
+            if (typeof notify_error === 'function') {
+                notify_error('Failed to retrieve user information');
+            }
+        });
+}
+
 
 
