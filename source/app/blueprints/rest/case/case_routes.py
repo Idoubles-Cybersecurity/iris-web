@@ -386,6 +386,24 @@ def case_update_status(caseid):
 
     return response_success('Case status updated', data=case.status_id)
 
+
+@case_rest_blueprint.route('/case/refresh', methods=['POST'])
+@ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
+@ac_api_requires()
+def case_refresh(caseid):
+    """API endpoint for external sources to trigger a page refresh for all users viewing this case"""
+    try:
+        # Emit socket.io event to refresh the case for all connected clients
+        socket_io.emit('case_refresh', {
+            'caseid': caseid,
+            'message': 'Case has been updated externally'
+        }, room=f'case-{caseid}')
+        
+        return response_success('Refresh notification sent to all viewers')
+    except Exception as e:
+        return response_error(f'Failed to send refresh notification: {str(e)}')
+
+
 @case_rest_blueprint.route('/case/md-helper', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 def case_md_helper(caseid, url_redir):

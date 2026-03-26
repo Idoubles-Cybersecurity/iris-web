@@ -22,6 +22,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from flask import jsonify, current_app, g
 from threading import Thread
+import requests
 
 from flask import Blueprint
 from flask import request
@@ -451,3 +452,96 @@ def manage_cases_uploadfiles(caseid):
         return response_success(status.get_message())
 
     return response_error(status.get_message())
+
+
+@manage_cases_rest_blueprint.route('/manage/webhook-proxy', methods=['POST'])
+@ac_api_requires(Permissions.standard_user)
+def proxy_webhook_request():
+    """
+    Backend proxy for webhook requests to avoid CORS issues.
+    
+    Expected JSON payload:
+    {
+        "webhook_url": "https://example.com/webhook",
+        "method": "GET" (default) or "POST",
+        "timeout": 10 (default),
+        "verify_ssl": false (default),
+        "csrf_token": "..." (IRIS CSRF token)
+    }
+    
+    Returns:
+    {
+        "status": "success|error",
+        "message": "...",
+        "webhook_status_code": 200,
+        "webhook_response": "..."
+    }
+    """
+    try:
+        request_data = request.get_json()
+        
+        if not request_data:
+            return response_error('No JSON payload provided')
+        
+        webhook_url = request_data.get('webhook_url')
+        method = request_data.get('method', 'GET').upper()
+        timeout = request_data.get('timeout', 10)
+        verify_ssl = request_data.get('verify_ssl', False)
+        
+        if not webhook_url:
+            return response_error('webhook_url is required')
+        
+        # Validate URL scheme
+        if not webhook_url.startswith(('http://', 'https://')):
+            return response_error('Invalid webhook URL. Must start with http:// or https://')
+        
+        # Replace localhost with host.docker.internal when running in Docker
+        # This allows containers to reach services on the host machine
+        if 'localhost' in webhook_url or '127.0.0.1' in webhook_url:
+            webhook_url = webhook_url.replace('localhost', 'host.docker.internal')
+            webhook_url = webhook_url.replace('127.0.0.1', 'host.docker.internal')
+            log.info(f'Replaced localhost with host.docker.internal in webhook URL')
+        
+        try:
+            # Make the webhook request from the backend
+            log.info(f'Proxying webhook request: {method} {webhook_url}')
+            
+            if method == 'POST':
+                response_obj = requests.post(
+                    webhook_url,
+                    timeout=timeout,
+                    verify=verify_ssl
+                )
+            else:  # GET or other methods
+                response_obj = requests.get(
+                    webhook_url,
+                    timeout=timeout,
+                    verify=verify_ssl
+                )
+            
+            log.info(f'Webhook response status: {response_obj.status_code}')
+            
+            # Return success with webhook response details
+            return response_success(
+                msg='Webhook request completed successfully',
+                data={
+                    'webhook_status_code': response_obj.status_code,
+                    'webhook_response': response_obj.text[:500]  # Limit response size
+                }
+            )
+            
+        except requests.exceptions.Timeout:
+            log.error(f'Webhook request timeout: {webhook_url}')
+            return response_error('Webhook request timed out', data={'webhook_status_code': 0})
+        
+        except requests.exceptions.ConnectionError as e:
+            log.error(f'Webhook connection error: {webhook_url} - {str(e)}')
+            return response_error(f'Failed to connect to webhook: {str(e)}', data={'webhook_status_code': 0})
+        
+        except requests.exceptions.RequestException as e:
+            log.error(f'Webhook request error: {webhook_url} - {str(e)}')
+            return response_error(f'Webhook request failed: {str(e)}', data={'webhook_status_code': 0})
+    
+    except Exception as e:
+        log.error(f'Webhook proxy error: {str(e)}')
+        return response_error(f'Internal server error: {str(e)}')

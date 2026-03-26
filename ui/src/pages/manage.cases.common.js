@@ -41,6 +41,12 @@ function close_case(id) {
             .done((data) => {
                 if (!refresh_case_table()) {
                     window.location.reload();
+                } else {
+                    // Refresh page if we're currently viewing this case
+                    let currentCaseId = get_caseid();
+                    if (currentCaseId && parseInt(currentCaseId) === parseInt(id)) {
+                        window.location.reload();
+                    }
                 }
                 $('#modal_case_detail').modal('hide');
             });

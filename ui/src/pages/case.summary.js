@@ -404,7 +404,7 @@ $(document).ready(function() {
         let converter = get_showdown_convert();
         let html = converter.makeHtml(do_md_filter_xss(editor.getSession().getValue()));
 
-        target.innerHTML = html;
+        target.innerHTML = do_md_filter_xss(html);
 
         // Attach click handlers to buttons to capture user ID for webhooks
         attachWebhookButtonListeners(target);
@@ -518,6 +518,17 @@ $(document).ready(function() {
 
      });
 
+    // Listen for external refresh notifications via socket.io
+    const caseId = get_caseid();
+    if (collaborator && collaborator.collaboration_socket) {
+        collaborator.collaboration_socket.on('case_refresh', function(data) {
+            if (data.caseid == caseId) {
+                console.log('Case updated externally, reloading page...');
+                window.location.reload();
+            }
+        });
+    }
+
 });
 
 /**
@@ -551,7 +562,7 @@ function attachWebhookButtonListeners(containerElement) {
                 // Execute original onclick (the confirm dialog)
                 const result = originalOnclick.call(this, event);
                 
-                // If user clicked Cancel (result is false), stop here
+                // If user clicked cancel stop here
                 if (result === false) {
                     console.log('Action cancelled by user');
                     event.preventDefault();
@@ -648,28 +659,74 @@ function attachWebhookButtonListeners(containerElement) {
 
 /**
  * Make a webhook request with user context
- * Opens the webhook URL in a new window/tab with user parameters appended
+ * Calls backend proxy endpoint to avoid CORS issues
+ * @param {string} webhookUrl - The webhook URL to trigger
+ * @param {object} userContext - User context data
+ * @param {boolean} refreshPage - Whether to refresh the page after successful webhook
  */
-function makeWebhookRequest(webhookUrl, userContext = {}) {
+function makeWebhookRequest(webhookUrl, userContext = {}, refreshPage = false) {
     try {
-        console.log('Opening webhook URL with user context:', webhookUrl);
+        console.log('Triggering webhook via backend proxy:', webhookUrl);
         
-        // Open the webhook URL in a new window/tab
-        // This avoids CORS issues and matches the original behavior of target="_blank"
-        const newWindow = window.open(webhookUrl, '_blank');
-        
-        if (newWindow) {
-            console.log('Webhook window opened successfully');
-            if (typeof notify_success === 'function') {
-                notify_success('Webhook triggered successfully');
-            }
-        } else {
-            // Popup might be blocked
-            console.warn('Popup may have been blocked. Trying to open webhook URL...');
-            if (typeof notify_error === 'function') {
-                notify_error('Webhook popup was blocked. Please check your browser settings.');
-            }
+        // Show loading notification
+        if (typeof notify_info === 'function') {
+            notify_info('Webhook request in progress...');
         }
+        
+        // Get CSRF token from the form
+        const csrfToken = $('#csrf_token').val();
+        
+        // Prepare the payload
+        const payload = {
+            webhook_url: webhookUrl,
+            method: 'GET',
+            timeout: 10,
+            verify_ssl: false
+        };
+        
+        // Add CSRF token to payload (IRIS expects it in the data)
+        if (csrfToken) {
+            payload['csrf_token'] = csrfToken;
+        }
+        
+        // Call backend proxy endpoint
+        fetch('/manage/webhook-proxy', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Webhook proxy response:', data);
+            
+            if (data.status === 'success') {
+                // Show success notification
+                if (typeof notify_success === 'function') {
+                    notify_success('External webhook triggered successfully');
+                }
+                
+                // Refresh page if requested
+                if (refreshPage) {
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500); // Give user time to see the notification
+                }
+            } else {
+                // Show error notification
+                const errorMsg = data.message || 'Webhook request failed';
+                if (typeof notify_error === 'function') {
+                    notify_error(errorMsg);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Webhook proxy request error:', error);
+            if (typeof notify_error === 'function') {
+                notify_error('Failed to trigger webhook: ' + error.message);
+            }
+        });
     } catch (error) {
         console.error('Webhook error:', error);
         if (typeof notify_error === 'function') {

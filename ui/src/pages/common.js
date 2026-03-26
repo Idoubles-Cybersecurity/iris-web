@@ -1005,6 +1005,7 @@ function do_md_filter_xss(html) {
                 i: ['class', "title"],
                 a: ['href', 'title', 'target', 'onclick', 'style'],
                 img: ['src', 'alt', 'title', 'width', 'height'],
+                iframe: ['src', 'width', 'height', 'style', 'title', 'frameborder', 'allow', 'id'],
                 div: ['class', 'style'],
                 p: [],
                 hr: [],
