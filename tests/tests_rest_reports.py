@@ -50,14 +50,14 @@ class TestsRestReports(TestCase):
         data = {'report_name': 'name', 'report_type': 1, 'report_language': 1, 'report_description': 'description',
                 'report_name_format': 'report_name_format'}
         response = self._subject.post_multipart_encoded_file('/manage/templates/add', data,
-                                                          'data/report_templates/variable_case_for_customer.docx').json()
+                                     'data/report_templates/variable_case_for_customer.docx').json()
         report_identifier = response['data']['report_id']
         case_identifier = self._subject.create_dummy_case()
         response = self._subject.get(f'/case/report/generate-investigation/{report_identifier}',
                                      {'cid': case_identifier, 'safe': True})
         with BytesIO(response.content) as content:
             document = Document(content)
-            self.assertEqual('IrisInitialClient (legacy::use client.customer_name)', document.paragraphs[0].text)
+            self.assertEqual('IrisInitialClient', document.paragraphs[0].text)
 
     def test_generate_md_report_should_render_variable_case_name(self):
         data = {'report_name': 'name', 'report_type': 1, 'report_language': 1, 'report_description': 'description',
@@ -79,7 +79,7 @@ class TestsRestReports(TestCase):
         case_identifier = self._subject.create_dummy_case()
         response = self._subject.get(f'/case/report/generate-investigation/{report_identifier}',
                                      {'cid': case_identifier, 'safe': True})
-        self.assertEqual('IrisInitialClient (legacy::use client.customer_name)', response.text)
+        self.assertEqual('IrisInitialClient', response.text)
 
     def test_generate_md_activities_report_should_render_variable_case_for_customer_when(self):
         data = {'report_name': 'name', 'report_type': 2, 'report_language': 1, 'report_description': 'description',
@@ -90,4 +90,4 @@ class TestsRestReports(TestCase):
         case_identifier = self._subject.create_dummy_case()
         response = self._subject.get(f'/case/report/generate-activities/{report_identifier}',
                                      {'cid': case_identifier, 'safe': True})
-        self.assertEqual('IrisInitialClient (legacy::use client.customer_name)', response.text)
+        self.assertEqual('IrisInitialClient', response.text)

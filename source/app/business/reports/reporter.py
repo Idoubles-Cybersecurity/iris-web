@@ -56,8 +56,7 @@ def _get_case_info(case_identifier):
 
     # Set date
     case_info['date'] = datetime.utcnow().strftime("%Y-%m-%d")
-    customer_name = case_info['case'].get('client').get('customer_name')
-    case_info['case']['for_customer'] = f'{customer_name} (legacy::use client.customer_name)'
+    case_info['case']['for_customer'] = case_info['case'].get('client').get('customer_name')
 
     return case_info
 
