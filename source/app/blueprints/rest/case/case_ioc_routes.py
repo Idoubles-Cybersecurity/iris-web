@@ -25,7 +25,7 @@ from flask import Blueprint
 from flask import request
 from marshmallow import ValidationError
 
-from app import db
+from app.db import db
 from app.blueprints.rest.case_comments import case_comment_update
 from app.blueprints.rest.endpoints import endpoint_deprecated
 from app.blueprints.iris_user import iris_current_user
@@ -33,8 +33,8 @@ from app.business.iocs import iocs_create
 from app.business.iocs import iocs_update
 from app.business.iocs import iocs_delete
 from app.business.iocs import iocs_get
-from app.business.errors import BusinessProcessingError
-from app.business.errors import ObjectNotFoundError
+from app.models.errors import BusinessProcessingError
+from app.models.errors import ObjectNotFoundError
 from app.datamgmt.case.case_iocs_db import add_comment_to_ioc
 from app.datamgmt.case.case_iocs_db import add_ioc
 from app.datamgmt.case.case_iocs_db import delete_ioc_comment
@@ -58,6 +58,7 @@ from app.blueprints.access_controls import ac_api_return_access_denied
 from app.blueprints.responses import response_error
 from app.blueprints.responses import response_success
 from app.iris_engine.module_handler.module_handler import call_deprecated_on_preload_modules_hook
+from app.iris_engine.access_control.utils import ac_get_fast_user_cases_access
 
 case_ioc_rest_blueprint = Blueprint('case_ioc_rest', __name__)
 
@@ -75,7 +76,8 @@ def case_list_ioc(caseid):
         out = ioc._asdict()
 
         # Get links of the IoCs seen in other cases
-        ial = get_ioc_links(ioc.ioc_id, caseid)
+        user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+        ial = get_ioc_links(ioc.ioc_id, user_search_limitations, caseid)
 
         out['link'] = [row._asdict() for row in ial]
         # Legacy, must be changed next version

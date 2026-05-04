@@ -85,23 +85,6 @@ def get_customer(client_id: int) -> Optional[Client]:
     return Client.query.filter(Client.client_id == client_id).first()
 
 
-def get_client_api(client_id: str) -> Client:
-    client = Client.query.with_entities(
-        Client.name.label('customer_name'),
-        Client.client_id.label('customer_id'),
-        Client.client_uuid.label('customer_uuid'),
-        Client.description.label('customer_description'),
-        Client.sla.label('customer_sla'),
-        Client.custom_attributes
-    ).filter(Client.client_id == client_id).first()
-
-    output = None
-    if client:
-        output = client._asdict()
-
-    return output
-
-
 def get_client_cases(client_id: int):
     cases_list = Cases.query.with_entities(
         Cases.case_id.label('case_id'),
@@ -189,3 +172,12 @@ def get_customer_by_name(name, case_insensitive=False) -> Client:
     else:
         query = query.filter_by(name=name)
     return query.first()
+
+
+def get_client_api(client_id: int) -> Optional[dict]:
+    """Get a customer by ID and serialize it as a dict for API responses."""
+    from app.schema.marshables import CustomerSchema  # Lazy import to avoid circular dependency
+    customer = get_customer(client_id)
+    if not customer:
+        return None
+    return CustomerSchema().dump(customer)

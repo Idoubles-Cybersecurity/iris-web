@@ -156,25 +156,25 @@ def get_detailed_iocs(caseid):
     return detailed_iocs
 
 
-def get_ioc_links(ioc_id, caseid):
-    search_condition = and_(Cases.case_id.in_([]))
-
-    user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+def get_ioc_links(ioc_id, user_search_limitations, exclude_case_id=None):
     if user_search_limitations:
         search_condition = and_(Cases.case_id.in_(user_search_limitations))
+    else:
+        search_condition = and_(Cases.case_id.in_([]))
+
+    filters = [IocLink.ioc_id == ioc_id, search_condition]
+    if exclude_case_id is not None:
+        filters.append(IocLink.case_id != exclude_case_id)
 
     ioc_link = (IocLink.query.with_entities(
         Cases.case_id,
         Cases.name.label('case_name'),
         Client.name.label('client_name')
-    ).filter(and_(
-        IocLink.ioc_id == ioc_id,
-        IocLink.case_id != caseid,
-        search_condition)
-    ).join(IocLink.case)
-     .join(Cases.client)
-     .order_by(Cases.case_id.asc())
-     .all())
+    ).filter(and_(*filters))
+      .join(IocLink.case)
+      .join(Cases.client)
+      .order_by(Cases.case_id.asc())
+      .all())
 
     return ioc_link
 

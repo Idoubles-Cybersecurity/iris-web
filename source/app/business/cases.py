@@ -149,7 +149,6 @@ def cases_create(user, case: Cases, case_template_id) -> Cases:
             logger.error(f'Unexpected error when executing triggers for template {case_template_id}: {e}')
 
     ac_set_new_case_access(user, case.case_id, case.client_id)
-
     case = call_modules_hook('on_postload_case_create', case)
 
     add_obj_history_entry(case, 'created')

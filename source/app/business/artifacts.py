@@ -32,7 +32,7 @@ from app.datamgmt.states import update_artifact_state
 from app.schema.marshables import ArtifactSchema
 from app.iris_engine.module_handler.module_handler import call_modules_hook
 from app.iris_engine.utils.tracker import track_activity
-from app.business.errors import BusinessProcessingError
+from app.models.errors import BusinessProcessingError
 from app.business.permissions import check_current_user_has_some_case_access_stricter
 from app.datamgmt.case.case_artifacts_db import get_artifact
 

@@ -28,7 +28,7 @@ from socket_io_context_manager import SocketIOContextManager
 API_URL = 'https://127.0.0.1'
 _API_KEY = os.environ.get(
     'IRIS_ADM_API_KEY',
-    'Lb953EEqRgtr43IKPv_dCpt5QjmDUdok7o3gjO9RxO4Wt_viTAHKl1s1Qhzjywt5uvrN3I15VDB3Tu1Kj5qjIA'
+    'Lb953gjO9RxO4Wt_viTAHKl1s1Qhzjywt5uvrN3I15VDB3Tu1Kj5qjIA'
 )
 _IRIS_PATH = Path('..')
 _ADMINISTRATOR_USER_LOGIN = 'administrator'
@@ -171,6 +171,19 @@ class Iris:
             if identifier == GROUP_ANALYSTS_IDENTIFIER:
                 continue
             self.delete(f'/api/v2/manage/groups/{identifier}')
+        response = self.get('api/v2/alerts').json()
+        for alert in response['data']:
+            identifier = alert['alert_id']
+            self.delete(f'/api/v2/alerts/{identifier}')
+        response = self.get('/global/tasks/list').json()
+        for global_task in response['data']['tasks']:
+            identifier = global_task['task_id']
+            self.create(f'/global/tasks/delete/{identifier}', {})
+        users = self.get('/manage/users/list').json()
+        for user in users['data']:
+            identifier = user['user_id']
+            self.get(f'/manage/users/deactivate/{identifier}')
+            self.delete(f'/api/v2/manage/users/{identifier}')
 
         # Reset administrator customer access
         body = {'customers_membership': [IRIS_INITIAL_CUSTOMER_IDENTIFIER]}

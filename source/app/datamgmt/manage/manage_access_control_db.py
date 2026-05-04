@@ -272,3 +272,25 @@ def add_several_user_effective_access(user_identifiers, case_identifier, access_
 
     db.session.add_all(access_to_add)
     db.session.commit()
+
+
+def add_several_user_effective_access(user_identifiers, case_identifier, access_level):
+    """
+    Directly add a set of effective user access
+    """
+
+    UserCaseEffectiveAccess.query.filter(
+        UserCaseEffectiveAccess.case_id == case_identifier,
+        UserCaseEffectiveAccess.user_id.in_(user_identifiers)
+    ).delete()
+
+    access_to_add = []
+    for user_id in user_identifiers:
+        ucea = UserCaseEffectiveAccess()
+        ucea.user_id = user_id
+        ucea.case_id = case_identifier
+        ucea.access_level = access_level
+        access_to_add.append(ucea)
+
+    db.session.add_all(access_to_add)
+    db.session.commit()

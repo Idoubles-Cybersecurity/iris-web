@@ -219,7 +219,7 @@ def alerts_add_route() -> Response:
         if not ac_current_user_has_customer_access(result.alert_customer_id):
             return response_error('User not entitled to create alerts for the client')
         alert_schema = AlertSchema()
-        return response_api_created(alert_schema.dump(result))
+        return response_success('Alert added', data=alert_schema.dump(result))
 
     except ValidationError as e:
         return response_error('Data error', data=e.messages)

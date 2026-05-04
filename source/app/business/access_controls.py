@@ -16,15 +16,16 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from app import db
+from app.db import db
 
 from app.datamgmt.manage.manage_access_control_db import get_case_effective_access
 from app.datamgmt.manage.manage_access_control_db import remove_duplicate_user_case_effective_accesses
-from app.datamgmt.manage.manage_access_control_db import set_user_case_effective_access
+from app.datamgmt.manage.manage_access_control_db import add_user_case_effective_access
 from app.datamgmt.manage.manage_access_control_db import check_ua_case_client
 from app.datamgmt.manage.manage_access_control_db import user_has_client_access
 from app.logger import logger
 from app.models.authorization import UserCaseAccess
+from app.models.authorization import ac_has_permission_server_administrator
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import Permissions
 from app.models.authorization import ac_flag_match_mask
@@ -65,7 +66,7 @@ def set_case_effective_access_for_user(user_id, case_id, access_level: int):
     if remove_duplicate_user_case_effective_accesses(user_id, case_id):
         logger.error(f'Multiple access found for user {user_id} and case {case_id}')
 
-    set_user_case_effective_access(access_level, case_id, user_id)
+    add_user_case_effective_access(user_id, case_id, access_level)
 
 
 def ac_fast_check_user_has_case_access(user_id, cid, expected_access_levels: list[CaseAccessLevel]):

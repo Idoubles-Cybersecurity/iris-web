@@ -63,9 +63,9 @@ from app.blueprints.responses import response_error
 from app.blueprints.responses import response_success
 from app.business.artifacts import create
 from app.business.artifacts import update
+from app.models.errors import BusinessProcessingError
 from app.business.artifacts import escalate
 from app.business.artifacts import delete
-from app.business.errors import BusinessProcessingError
 
 case_artifact_blueprint = Blueprint(
     'case_artifact',

@@ -361,16 +361,19 @@ def case_comment_asset_list(cur_id, caseid):
 @endpoint_deprecated('POST', '/api/v2/assets/{asset_identifier}/comments')
 @ac_requires_case_identifier(CaseAccessLevel.full_access)
 @ac_api_requires()
-def case_comment_asset_add(cur_id, caseid):
+def case_comment_asset_add(cur_id, caseid=None):
     try:
         asset = get_asset(cur_id)
         if not asset:
             return response_error('Invalid asset ID')
+        
+        # Use asset's case_id (ignore decorator's caseid if mismatched)
+        caseid = asset.case_id
 
         comment_schema = CommentSchema()
 
         comment = comment_schema.load(request.get_json())
-        comment.comment_case_id = asset.case_id
+        comment.comment_case_id = caseid
         comment.comment_user_id = iris_current_user.id
         comment.comment_date = datetime.now()
         comment.comment_update_date = datetime.now()
@@ -385,9 +388,9 @@ def case_comment_asset_add(cur_id, caseid):
             "comment": comment_schema.dump(comment),
             "asset": CaseAssetsSchema().dump(asset)
         }
-        call_modules_hook('on_postload_asset_commented', hook_data, caseid=asset.case_id)
+        call_modules_hook('on_postload_asset_commented', hook_data, caseid=caseid)
 
-        track_activity(f"asset \"{asset.asset_name}\" commented", caseid=asset.case_id)
+        track_activity(f"asset \"{asset.asset_name}\" commented", caseid=caseid)
         return response_success("Asset commented", data=comment_schema.dump(comment))
 
     except ValidationError as e:
@@ -398,10 +401,13 @@ def case_comment_asset_add(cur_id, caseid):
 @endpoint_deprecated('GET', '/api/v2/assets/{asset_identifier}/comments/{identifier}')
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 @ac_api_requires()
-def case_comment_asset_get(cur_id, com_id, caseid):
+def case_comment_asset_get(cur_id, com_id, caseid=None):
     asset = get_asset(cur_id)
-    if not asset or asset.case_id != caseid:
+    if not asset:
         return response_error("Invalid comment ID")
+    
+    # Use asset's case_id (ignore decorator's caseid if mismatched)
+    caseid = asset.case_id
 
     comment = get_case_asset_comment(cur_id, com_id)
     if not comment:

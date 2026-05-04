@@ -950,7 +950,8 @@ class IocSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
         if caseid is None:
             caseid = getattr(ioc, 'case_id', None)
 
-        ial = get_ioc_links(ioc.ioc_id, caseid)
+        user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+        ial = get_ioc_links(ioc.ioc_id, user_search_limitations, caseid)
         return [row._asdict() for row in ial]
 
     link = ma.Method('get_link')
@@ -1058,7 +1059,8 @@ class IocSchema(ma.SQLAlchemyAutoSchema):
         if caseid is None:
             caseid = getattr(ioc, 'case_id', None)
 
-        ial = get_ioc_links(ioc.ioc_id, caseid)
+        user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+        ial = get_ioc_links(ioc.ioc_id, user_search_limitations, caseid)
         return [row._asdict() for row in ial]
 
     link = ma.Method('get_link')
