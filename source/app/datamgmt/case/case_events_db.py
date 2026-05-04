@@ -18,17 +18,16 @@
 
 from sqlalchemy import and_
 
-from app import db
-from app.blueprints.iris_user import iris_current_user
+from app.datamgmt.db_operations import db_create
+from app.datamgmt.db_operations import db_delete
+from app.db import db
 from app.datamgmt.states import update_timeline_state
-from app.models.models import AssetsType
-from app.models.models import CaseAssets
+from app.models.assets import AssetsType
+from app.models.assets import CaseAssets
 from app.models.models import CaseEventCategory
 from app.models.models import CaseEventsAssets
 from app.models.models import CaseEventsIoc
 from app.models.models import CaseEventsArtifact
-from app.models.models import Artifact
-from app.models.models import ArtifactLink
 from app.models.cases import CasesEvent
 from app.models.comments import Comments
 from app.models.comments import EventComments
@@ -37,6 +36,8 @@ from app.models.iocs import Ioc
 from app.models.models import IocAssetLink
 from app.models.models import IocType
 from app.models.authorization import User
+
+from app.datamgmt.case.case_artifacts_db import get_artifacts
 
 
 def get_case_events_assets_graph(caseid):
@@ -67,6 +68,20 @@ def get_case_events_assets_graph(caseid):
     ).all()
 
     return events
+
+
+def get_case_artifacts_for_tm(caseid):
+    artifacts = [{'artifact_value': '', 'artifact_id': '0'}]
+
+    artifacts_list = get_artifacts(caseid)
+
+    for artifact in artifacts_list:
+        artifacts.append({
+            'artifact_value': artifact.artifact_value,
+            'artifact_id': artifact.artifact_id
+        })
+
+    return artifacts
 
 
 def get_case_events_ioc_graph(caseid):
@@ -161,10 +176,10 @@ def get_case_event_comment(event_id, comment_id):
     ).first()
 
 
-def delete_event_comment(event_id, comment_id):
+def delete_event_comment(user_identifier, event_id, comment_id):
     comment = Comments.query.filter(
         Comments.comment_id == comment_id,
-        Comments.comment_user_id == iris_current_user.id
+        Comments.comment_user_id == user_identifier
     ).first()
     if not comment:
         return False, "You are not allowed to delete this comment"
@@ -174,8 +189,7 @@ def delete_event_comment(event_id, comment_id):
         EventComments.comment_id == comment_id
     ).delete()
 
-    db.session.delete(comment)
-    db.session.commit()
+    db_delete(comment)
 
     return True, "Comment deleted"
 
@@ -198,8 +212,7 @@ def add_comment_to_event(event_id, comment_id):
     ec.comment_event_id = event_id
     ec.comment_id = comment_id
 
-    db.session.add(ec)
-    db.session.commit()
+    db_create(ec)
 
 
 def delete_event_category(event_id):
@@ -224,8 +237,7 @@ def save_event_category(event_id, category_id):
     cec.event_id = event_id
     cec.category_id = category_id
 
-    db.session.add(cec)
-    db.session.commit()
+    db_create(cec)
 
 
 def get_event_assets_ids(event_id, caseid):
@@ -381,31 +393,7 @@ def get_case_iocs_for_tm(caseid):
     return iocs
 
 
-def get_case_artifacts_for_tm(caseid):
-    """
-    Return a list of all artifacts linked to the current case
-    :return: Tuple of artifacts
-    """
-    artifacts = [{'artifact_name': '', 'artifact_id': '0'}]
-
-    artifacts_list = ArtifactLink.query.with_entities(
-        Artifact.artifact_value,
-        Artifact.artifact_id
-    ).filter(
-        ArtifactLink.case_id == caseid,
-        ArtifactLink.artifact_id == Artifact.artifact_id
-    ).all()
-
-    for artifact in artifacts_list:
-        artifacts.append({
-            'artifact_name': f'{artifact.artifact_value}',
-            'artifact_id': artifact.artifact_id
-        })
-
-    return artifacts
-
-
-def delete_event(event):
+def delete_event(user_identifier, event):
     case_identifier = event.case_id
     delete_event_category(event.event_id)
 
@@ -433,14 +421,14 @@ def delete_event(event):
     db.session.commit()
 
     db.session.delete(event)
-    update_timeline_state(caseid=case_identifier)
+    update_timeline_state(case_identifier, user_identifier)
 
     db.session.commit()
 
 
 def get_category_by_name(cat_name):
     return EventCategory.query.filter(
-        EventCategory.name  == cat_name,
+        EventCategory.name == cat_name,
     ).first()
 
 

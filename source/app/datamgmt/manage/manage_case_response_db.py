@@ -15,13 +15,15 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from datetime import datetime
-from typing import List, Optional, Union
+from typing import List, Optional
+
+import requests
 
 from app import db
+from app.blueprints.iris_user import iris_current_user
+from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
 from app.models.models import CaseResponse
 from app.models.authorization import User
-from app.schema.marshables import CaseResponseSchema
 
 
 def get_case_responses_list_by_case_id(case_id: int) -> List[dict]:
@@ -58,7 +60,7 @@ def get_case_response_by_id(response_id: int) -> CaseResponse:
     Returns:
         CaseResponse: Task response object.
     """
-    case_response = CaseResponse.query.filter_by(id=response_id)
+    case_response = CaseResponse.query.filter_by(id=response_id).first()
     return case_response
 
 
@@ -98,5 +100,60 @@ def validate_case_response(data: dict, update: bool = False) -> Optional[str]:
         
         # If all validations pass, return None
         return None
+    except Exception as e:
+        return str(e)
+
+
+def save_results(data, case_id, trigger_id):
+    """Persist a trigger execution result."""
+    case_response = CaseResponse(
+        case=case_id,
+        trigger=trigger_id,
+        body=data,
+        created_by_user_id=getattr(iris_current_user, 'id', None),
+    )
+
+    db.session.add(case_response)
+    db.session.commit()
+    return case_response
+
+
+def execute_and_save_trigger(trigger, case_id):
+    """Execute a case template trigger and store its response."""
+    try:
+        webhook_id = trigger.get('webhook_id')
+        if webhook_id in (None, ''):
+            raise ValueError('Trigger execution failed: webhook_id is missing in trigger.')
+
+        try:
+            webhook_id = int(webhook_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'Trigger execution failed: invalid webhook_id {webhook_id!r}.') from exc
+
+        webhook = get_webhook_by_id(webhook_id)
+        if not webhook:
+            raise ValueError(f'Trigger execution failed: No webhook found for webhook_id {webhook_id}.')
+
+        if not webhook.url:
+            raise ValueError(f'Trigger execution failed: URL is missing in webhook with id {webhook_id}.')
+
+        response = requests.post(webhook.url, json=trigger, verify=False)
+        if response.status_code != 200:
+            raise ValueError(
+                f'Trigger execution failed: Webhook request returned status {response.status_code}, '
+                f'response: {response.text}'
+            )
+
+        if 'application/json' in response.headers.get('Content-Type', ''):
+            results = response.json()
+        else:
+            results = {'response': response.text}
+
+        if isinstance(results, str):
+            results = {'response': results}
+
+        save_results(results, case_id, webhook_id)
+        return f'Trigger executed successfully and saved for webhook_id {webhook_id}.'
+
     except Exception as e:
         return str(e)

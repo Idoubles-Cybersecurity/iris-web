@@ -73,9 +73,9 @@ class IocsOperations:
             filtered_iocs = iocs_filter(case_identifier, pagination_parameters, request.args.to_dict())
 
             if fields:
-                iocs_schema = IocSchemaForAPIV2(only=fields)
+                iocs_schema = IocSchemaForAPIV2(only=fields, context={'caseid': case_identifier})
             else:
-                iocs_schema = self._schema
+                iocs_schema = IocSchemaForAPIV2(context={'caseid': case_identifier})
 
             return response_api_paginated(iocs_schema, filtered_iocs)
 
@@ -92,9 +92,9 @@ class IocsOperations:
             request_data = call_deprecated_on_preload_modules_hook('ioc_create', request.get_json(), case_identifier)
             request_data['case_id'] = case_identifier
 
-            ioc = self._schema.load(request_data)
+            ioc = IocSchemaForAPIV2().load(request_data)
             ioc = iocs_create(ioc)
-            result = self._schema.dump(ioc)
+            result = IocSchemaForAPIV2(context={'caseid': case_identifier}).dump(ioc)
             return response_api_created(result)
         except ValidationError as e:
             return response_api_error('Data error', e.messages)
@@ -110,7 +110,7 @@ class IocsOperations:
         try:
             ioc = self._get_ioc_in_case(identifier, case_identifier)
 
-            result = self._schema.dump(ioc)
+            result = IocSchemaForAPIV2(context={'caseid': case_identifier}).dump(ioc)
             return response_api_success(result)
         except ObjectNotFoundError:
             return response_api_not_found()
@@ -135,7 +135,7 @@ class IocsOperations:
 
             ioc = iocs_update(ioc, ioc_sc)
 
-            result = self._schema.dump(ioc)
+            result = IocSchemaForAPIV2(context={'caseid': case_identifier}).dump(ioc)
             return response_api_success(result)
 
         except ValidationError as e:

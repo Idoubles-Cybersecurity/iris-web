@@ -17,10 +17,11 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 # IMPORTS ------------------------------------------------
-from flask import Blueprint, jsonify, request, redirect, render_template, url_for
+from flask import Blueprint, jsonify, request, render_template
 import json
-from flask_wtf import FlaskForm
 from app.datamgmt.case.case_db import get_case
+from app.datamgmt.case.case_tasks_db import get_task
+from app.datamgmt.manage.manage_task_response_db import get_task_responses_list
 from app.datamgmt.manage.manage_task_response_db import get_task_responses_list_for_case
 from app.blueprints.access_controls import ac_requires_case_identifier
 from app.blueprints.access_controls import ac_api_requires
@@ -33,14 +34,12 @@ case_triggers_blueprint = Blueprint('case_triggers',
 @case_triggers_blueprint.route('/case/triggers', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 def case_triggers(caseid):
-    # Page route uses ac_requires_case_identifier which only injects 'caseid'
-    form = FlaskForm()
     case = get_case(caseid)
 
     if case is None:
-        return render_template("case_triggers.html", case=None, caseid=caseid, form=form)
+        return render_template("case_triggers.html", case=None, caseid=caseid)
 
-    return render_template("case_triggers.html", case=case, caseid=caseid, form=form)
+    return render_template("case_triggers.html", case=case, caseid=caseid)
 
 
 @case_triggers_blueprint.route('/case/triggers-list/<int:case_id>', methods=['GET'])
@@ -67,3 +66,31 @@ def case_triggers_list(case_id, caseid):
     except Exception as e:
         print(f"Error processing case triggers: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@case_triggers_blueprint.route('/case/task/action_responses/<int:task_id>', methods=['GET'])
+@ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
+@ac_api_requires()
+def case_task_action_responses(task_id, caseid):
+    """Compatibility endpoint used by the task modal action table."""
+    task = get_task(task_id=task_id)
+    if not task or task.task_case_id != caseid:
+        return jsonify({"status": "error", "message": "Invalid task ID for this case", "data": []}), 404
+
+    try:
+        responses = get_task_responses_list(task_id)
+        normalized = []
+        for r in responses:
+            normalized.append({
+                'id': r.get('id'),
+                'action': r.get('action'),
+                'task': r.get('task'),
+                'body': json.dumps(r.get('body')) if isinstance(r.get('body'), dict) else r.get('body'),
+                'created_at': r.get('created_at').strftime('%Y-%m-%d %H:%M:%S') if r.get('created_at') else None,
+                'created_by': r.get('created_by')
+            })
+
+        return jsonify({"status": "success", "message": "", "data": normalized})
+    except Exception as e:
+        print(f"Error fetching task action responses for task {task_id}: {e}")
+        return jsonify({"status": "error", "message": str(e), "data": []}), 500

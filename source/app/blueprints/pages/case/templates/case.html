@@ -425,6 +425,9 @@
     </div>
     {% include 'includes/footer.html' %}
     {% endif %} {% endblock content %} {% block javascripts %}
+    <script>
+        var caseId = {{ case.case_id }};
+    </script>
     <script src="/static/assets/js/plugin/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
     <script src="/static/assets/js/plugin/ace/src-noconflict/ext-language_tools.js" type="text/javascript"
         charset="utf-8"></script>
@@ -439,7 +442,6 @@
     <script src="/static/assets/js/iris/manage.cases.common.js"></script>
     <script src="/static/assets/js/iris/case.common.js"></script>
     <script src="/static/assets/js/iris/case.summary.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
     <script src="/static/assets/js/plugin/select/bootstrap-select.min.js"></script>
     <script src="/static/assets/js/plugin/select/bootstrap-multiselect.min.js"></script>
 

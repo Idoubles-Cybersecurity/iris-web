@@ -144,9 +144,11 @@ function delete_task(id) {
 
 
 function edit_task(id) {
-  case_temp_id = caseTemplateId.toString();
+  const case_temp_id = (typeof caseTemplateId !== 'undefined' && caseTemplateId !== null)
+    ? caseTemplateId.toString()
+    : '0';
   const url = '/case/tasks/' + id + '/modal' + case_param();
-  const webHooksurl = `/manage/webhooks/listbyCasetemplateId/${case_temp_id}/${id}`+case_param();
+  const webHooksurl = `/manage/webhooks/listbyCasetemplateId/${case_temp_id}/${id}` + case_param();
   $('#modal_add_task_content').load(url, function (response, status, xhr) {
     hide_minimized_modal_box();
     if (status !== "success") {

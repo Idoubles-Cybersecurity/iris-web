@@ -51,7 +51,8 @@ from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import CaseAccessLevel
 from app.schema.marshables import CommentSchema
 from app.schema.marshables import IocSchema
-from app.blueprints.access_controls import ac_requires_case_identifier, ac_fast_check_current_user_has_case_access
+from app.blueprints.access_controls import ac_requires_case_identifier
+from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
 from app.blueprints.access_controls import ac_api_requires
 from app.blueprints.access_controls import ac_api_return_access_denied
 from app.blueprints.responses import response_error
@@ -176,7 +177,7 @@ def case_upload_ioc(caseid):
             row['ioc_type_id'] = type_id.type_id
             row.pop('ioc_type', None)
 
-            request_data = call_modules_hook('on_preload_ioc_create', data=row, caseid=caseid)
+            request_data = call_modules_hook('on_preload_ioc_create', row, caseid=caseid)
 
             ioc = add_ioc_schema.load(request_data)
             ioc.custom_attributes = get_default_custom_attributes('ioc')
@@ -188,7 +189,7 @@ def case_upload_ioc(caseid):
                 continue
 
             add_ioc(ioc, iris_current_user.id, caseid)
-            ioc = call_modules_hook('on_postload_ioc_create', data=ioc, caseid=caseid)
+            ioc = call_modules_hook('on_postload_ioc_create', ioc, caseid=caseid)
             ret.append(request_data)
             track_activity(f'added ioc "{ioc.ioc_value}"', caseid=caseid)
 
@@ -286,7 +287,7 @@ def case_comment_ioc_add(cur_id, caseid):
         comment_schema = CommentSchema()
 
         comment = comment_schema.load(request.get_json())
-        comment.comment_case_id = ioc.case_id
+        comment.comment_case_id = caseid
         comment.comment_user_id = iris_current_user.id
         comment.comment_date = datetime.now()
         comment.comment_update_date = datetime.now()
@@ -301,9 +302,9 @@ def case_comment_ioc_add(cur_id, caseid):
             'comment': comment_schema.dump(comment),
             'ioc': IocSchema().dump(ioc)
         }
-        call_modules_hook('on_postload_ioc_commented', data=hook_data, caseid=ioc.case_id)
+        call_modules_hook('on_postload_ioc_commented', hook_data, caseid=caseid)
 
-        track_activity(f'ioc "{ioc.ioc_value}" commented', caseid=ioc.case_id)
+        track_activity(f'ioc "{ioc.ioc_value}" commented', caseid=caseid)
         return response_success('IOC commented', data=comment_schema.dump(comment))
 
     except marshmallow.exceptions.ValidationError as e:
@@ -335,11 +336,11 @@ def case_comment_ioc_edit(cur_id, com_id, caseid):
 @ac_requires_case_identifier(CaseAccessLevel.full_access)
 @ac_api_requires()
 def case_comment_ioc_delete(cur_id, com_id, caseid):
-    success, msg = delete_ioc_comment(cur_id, com_id)
+    success, msg = delete_ioc_comment(iris_current_user.id, cur_id, com_id)
     if not success:
         return response_error(msg)
 
-    call_modules_hook('on_postload_ioc_comment_delete', data=com_id, caseid=caseid)
+    call_modules_hook('on_postload_ioc_comment_delete', com_id, caseid=caseid)
 
     track_activity(f'comment {com_id} on ioc {cur_id} deleted', caseid=caseid)
     return response_success(msg)

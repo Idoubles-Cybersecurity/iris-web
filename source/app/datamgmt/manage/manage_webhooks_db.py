@@ -46,7 +46,7 @@ def get_webhooks_list() -> List[dict]:
         Webhook.updated_at,
         Webhook.payload_schema,
         User.name.label('added_by')
-    ).join(
+    ).outerjoin(
         Webhook.created_by_user
     ).all()
 

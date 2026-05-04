@@ -75,8 +75,10 @@ def case_template_modal(cur_id, caseid, url_redir):
         "tags": case_template.tags,
         "tasks": case_template.tasks,
         "note_directories": case_template.note_directories,
+        "actions": case_template.actions,
+        "triggers": case_template.triggers,
+        "input_params": case_template.input_params,
         "classification": case_template.classification,
-        "triggers": case_template.triggers
     }
 
     form.case_template_json.data = case_template_dict

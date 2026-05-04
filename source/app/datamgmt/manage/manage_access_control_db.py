@@ -17,7 +17,7 @@
 from sqlalchemy import and_
 
 from app import ac_current_user_has_permission
-from app import db
+from app.db import db
 from app.models.cases import Cases
 from app.models.authorization import Group
 from app.models.authorization import UserClient
@@ -168,9 +168,6 @@ def user_has_client_access(user_id: int, client_id: int) -> bool:
     Returns:
         bool: True if the user has access to the client
     """
-    if ac_current_user_has_permission(Permissions.server_administrator):
-        return True
-
     result = UserClient.query.filter(
         UserClient.user_id == user_id,
         UserClient.client_id == client_id
@@ -194,51 +191,84 @@ def remove_duplicate_user_case_effective_accesses(user_id, case_id):
     return True
 
 
-def set_user_case_effective_access(access_level, case_id, user_id):
-    # Validate case_id is not None
-    if case_id is None:
-        logger.error(f'Attempted to set access for user {user_id} with NULL case_id')
-        return
-    
-    # Validate the case exists before creating access record
-    from app.models.cases import Cases
-    case_exists = Cases.query.filter(Cases.case_id == case_id).first()
-    if not case_exists:
-        logger.error(f'Attempted to set access for user {user_id} to non-existent case {case_id}')
-        return
-    
+def add_user_case_effective_access(user_identifier, case_identifier, access_level):
     uac = UserCaseEffectiveAccess.query.where(and_(
-        UserCaseEffectiveAccess.user_id == user_id,
-        UserCaseEffectiveAccess.case_id == case_id
+        UserCaseEffectiveAccess.user_id == user_identifier,
+        UserCaseEffectiveAccess.case_id == case_identifier
     )).first()
     if uac:
         uac.access_level = access_level
     else:
-        # Create new effective access entry if it doesn't exist
         uac = UserCaseEffectiveAccess()
-        uac.user_id = user_id
-        uac.case_id = case_id
+        uac.user_id = user_identifier
+        uac.case_id = case_identifier
+        uac.access_level = access_level
+        db.session.add(uac)
+    db.session.commit()
+
+
+def set_user_case_effective_access(access_level, case_identifier, user_identifier):
+    # Validate case_identifier is not None
+    if case_identifier is None:
+        logger.warning('Attempted to set user case effective access with NULL case_id')
+        return
+
+    # Validate the case exists before creating access record
+    case_exists = Cases.query.filter(Cases.case_id == case_identifier).first()
+    if not case_exists:
+        logger.warning(f'Attempted to set user case effective access to non-existent case {case_identifier}')
+        return
+
+    uac = UserCaseEffectiveAccess.query.where(and_(
+        UserCaseEffectiveAccess.user_id == user_identifier,
+        UserCaseEffectiveAccess.case_id == case_identifier
+    )).first()
+    if uac:
+        uac.access_level = access_level
+    else:
+        uac = UserCaseEffectiveAccess()
+        uac.user_id = user_identifier
+        uac.case_id = case_identifier
         uac.access_level = access_level
         db.session.add(uac)
     db.session.commit()
 
 
 def cleanup_orphaned_case_access_records():
-    """
-    Remove access records for cases that no longer exist
-    """
-    # Find all orphaned records where case_id is NULL or references non-existent cases
+    """Delete case effective access records referencing non-existent cases."""
     orphaned = UserCaseEffectiveAccess.query.outerjoin(
         Cases, UserCaseEffectiveAccess.case_id == Cases.case_id
     ).filter(
         Cases.case_id.is_(None)
     ).all()
-    
+
     count = len(orphaned)
     if count > 0:
         for record in orphaned:
             db.session.delete(record)
         db.session.commit()
-        logger.info(f'Cleaned up {count} orphaned case access records')
-    
+        logger.info(f'Cleaned up {count} orphaned UserCaseEffectiveAccess records')
+
     return count
+
+
+def add_several_user_effective_access(user_identifiers, case_identifier, access_level):
+    """
+    Directly add a set of effective user access
+    """
+
+    UserCaseEffectiveAccess.query.filter(
+        UserCaseEffectiveAccess.case_id == case_identifier,
+        UserCaseEffectiveAccess.user_id.in_(user_identifiers)
+    ).delete()
+
+    access_to_add = []
+    for user_id in user_identifiers:
+        ucea = UserCaseEffectiveAccess()
+        ucea.user_id = user_id
+        ucea.case_id = case_identifier
+        ucea.access_level = access_level
+        access_to_add.append(ucea)
+
+    db.session.add_all(access_to_add)
+    db.session.commit()

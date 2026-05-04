@@ -18,45 +18,40 @@
 
 from sqlalchemy import and_, func
 
-from app import db
-from app import app
-from app.blueprints.iris_user import iris_current_user
+from app.datamgmt.db_operations import db_create
+from app.datamgmt.db_operations import db_delete
+from app.db import db
 from app.datamgmt.filtering import get_filtered_data
 from app.datamgmt.states import update_ioc_state
+from app.blueprints.iris_user import iris_current_user
 from app.iris_engine.access_control.utils import ac_get_fast_user_cases_access
 from app.models.alerts import Alert
 from app.models.cases import Cases
 from app.models.cases import CasesEvent
-from app.models.models import Client
-from app.models.models import CaseAssets
-from app.models.comments import Comments, IocComments
+from app.models.assets import CaseAssets
+from app.models.customers import Client
+from app.models.comments import Comments
+from app.models.comments import IocComments
 from app.models.iocs import Ioc
+from app.models.models import IocLink
 from app.models.models import IocType
 from app.models.iocs import Tlp
 from app.models.authorization import User
 from app.models.pagination_parameters import PaginationParameters
 from app.util import add_obj_history_entry
-
-#from flask_login import current_user
 from app.models.models import CaseEventsIoc
 from app.models.models import IocAssetLink
-from app.models.models import IocLink
 
 
-def get_iocs(caseid):
-    iocs = IocLink.query.with_entities(
-        Ioc.ioc_value,
-        Ioc.ioc_id,
-        Ioc.ioc_uuid
-    ).filter(
-        IocLink.case_id == caseid,
-        IocLink.ioc_id == Ioc.ioc_id
-    ).all()
-
-    return iocs
+relationship_model_map = {
+    'user': User,
+    'ioc_type': IocType,
+    'tlp': Tlp,
+    'case': Cases
+}
 
 
-def get_iocs_by_case(case_identifier) -> list[Ioc]:
+def get_iocs(case_identifier) -> list[Ioc]:
     return Ioc.query.filter(
         IocLink.case_id == case_identifier,
         IocLink.ioc_id == Ioc.ioc_id
@@ -94,7 +89,7 @@ def update_ioc(ioc_type, ioc_tags, ioc_value, ioc_description, ioc_tlp, userid, 
         return False
 
 
-def delete_ioc(ioc, caseid):
+def delete_ioc(ioc: Ioc, caseid):
     with db.session.begin_nested():
         IocLink.query.filter(
             and_(
@@ -178,54 +173,10 @@ def get_ioc_links(ioc_id, caseid):
         search_condition)
     ).join(IocLink.case)
      .join(Cases.client)
+     .order_by(Cases.case_id.asc())
      .all())
 
     return ioc_link
-
-
-def get_linked_cases_for_ioc(ioc_id, caseid, page=1, per_page=50):
-    """Get linked cases for an IOC with pagination support."""
-    search_condition = and_(Cases.case_id.in_([]))
-
-    user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
-    if user_search_limitations:
-        search_condition = and_(Cases.case_id.in_(user_search_limitations))
-
-    # Base query
-    query = (IocLink.query.with_entities(
-        Cases.case_id,
-        Cases.name.label('case_name'),
-        Client.name.label('client_name'),
-        Cases.open_date
-    ).filter(and_(
-        IocLink.ioc_id == ioc_id,
-        IocLink.case_id != caseid,
-        search_condition)
-    ).join(IocLink.case)
-     .join(Cases.client)
-     .order_by(Cases.open_date.desc()))
-
-    # Get total count
-    total = query.count()
-
-    # Apply pagination
-    paginated_query = query.limit(per_page).offset((page - 1) * per_page)
-    results = paginated_query.all()
-
-    return {
-        'cases': [row._asdict() for row in results],
-        'total': total,
-        'page': page,
-        'per_page': per_page,
-        'total_pages': (total + per_page - 1) // per_page
-    }
-
-
-def find_ioc(ioc_value, ioc_type_id):
-    ioc = Ioc.query.filter(Ioc.ioc_value == ioc_value,
-                           Ioc.ioc_type_id == ioc_type_id).first()
-
-    return ioc
 
 
 def add_ioc(ioc: Ioc, user_id, caseid):
@@ -237,11 +188,10 @@ def add_ioc(ioc: Ioc, user_id, caseid):
     db_ioc = find_ioc(ioc.ioc_value, ioc.ioc_type_id)
 
     if not db_ioc:
-        ioc.case_id = caseid  # Set the case_id on the IOC itself
+        ioc.case_id = caseid
         db.session.add(ioc)
-        db.session.flush()  # Flush to get the ioc_id before creating the link
-        
-        # Create the link between IOC and case
+        db.session.flush()
+
         link = IocLink()
         link.case_id = caseid
         link.ioc_id = ioc.ioc_id
@@ -249,39 +199,48 @@ def add_ioc(ioc: Ioc, user_id, caseid):
 
         update_ioc_state(caseid=caseid)
         db.session.commit()
-        
         return ioc, False
 
-    else:
-        # IoC already exists, create link if it doesn't exist
-        add_ioc_link(db_ioc.ioc_id, caseid)
-        return db_ioc, True
+    add_ioc_link(db_ioc.ioc_id, caseid)
+    return db_ioc, True
 
 
-def find_ioc_link(ioc_id, caseid):
-    db_link = IocLink.query.filter(
-        IocLink.case_id == caseid,
-        IocLink.ioc_id == ioc_id
+def find_ioc(ioc_value, ioc_type_id):
+    return Ioc.query.filter(
+        Ioc.ioc_value == ioc_value,
+        Ioc.ioc_type_id == ioc_type_id
     ).first()
-
-    return db_link
 
 
 def add_ioc_link(ioc_id, caseid):
-
-    db_link = find_ioc_link(ioc_id, caseid)
-    if db_link:
-        # Link already exists
+    existing = IocLink.query.filter(
+        IocLink.case_id == caseid,
+        IocLink.ioc_id == ioc_id
+    ).first()
+    if existing:
         return True
-    else:
-        link = IocLink()
-        link.case_id = caseid
-        link.ioc_id = ioc_id
 
-        db.session.add(link)
-        db.session.commit()
+    link = IocLink()
+    link.case_id = caseid
+    link.ioc_id = ioc_id
+    db.session.add(link)
+    db.session.commit()
+    return False
 
+
+def case_iocs_db_exists(ioc: Ioc):
+    case_id = getattr(ioc, 'case_id', None)
+    if not case_id:
         return False
+
+    existing = Ioc.query.join(IocLink).filter(
+        func.lower(Ioc.ioc_value) == func.lower(ioc.ioc_value),
+        Ioc.ioc_type_id == ioc.ioc_type_id,
+        IocLink.case_id == case_id,
+        Ioc.ioc_id != getattr(ioc, 'ioc_id', None)
+    ).first()
+
+    return existing is not None
 
 
 def get_ioc_types_list():
@@ -298,14 +257,13 @@ def get_ioc_types_list():
     return l_types
 
 
-def add_ioc_type(name:str, description:str, taxonomy:str):
+def add_ioc_type(name: str, description: str, taxonomy: str):
     ioct = IocType(type_name=name,
                    type_description=description,
                    type_taxonomy=taxonomy
                 )
 
-    db.session.add(ioct)
-    db.session.commit()
+    db_create(ioct)
     return ioct
 
 
@@ -332,7 +290,7 @@ def get_tlps():
 def get_tlps_dict():
     tlpDict = {}
     for tlp in Tlp.query.all():
-        tlpDict[tlp.tlp_name]=tlp.tlp_id 
+        tlpDict[tlp.tlp_name] = tlp.tlp_id
     return tlpDict
 
 
@@ -354,8 +312,7 @@ def add_comment_to_ioc(ioc_id, comment_id):
     ec.comment_ioc_id = ioc_id
     ec.comment_id = comment_id
 
-    db.session.add(ec)
-    db.session.commit()
+    db_create(ec)
 
 
 def get_case_iocs_comments_count(iocs_list):
@@ -388,10 +345,10 @@ def get_case_ioc_comment(ioc_id, comment_id):
             .join(Comments.user).first())
 
 
-def delete_ioc_comment(ioc_id, comment_id):
+def delete_ioc_comment(user_identifier, ioc_id, comment_id):
     comment = Comments.query.filter(
         Comments.comment_id == comment_id,
-        Comments.comment_user_id == iris_current_user.id
+        Comments.comment_user_id == user_identifier
     ).first()
     if not comment:
         return False, "You are not allowed to delete this comment"
@@ -401,10 +358,10 @@ def delete_ioc_comment(ioc_id, comment_id):
         IocComments.comment_id == comment_id
     ).delete()
 
-    db.session.delete(comment)
-    db.session.commit()
+    db_delete(comment)
 
     return True, "Comment deleted"
+
 
 def get_ioc_by_value(ioc_value, caseid=None):
     if caseid:
@@ -420,37 +377,55 @@ def get_ioc_by_value(ioc_value, caseid=None):
     return Ioc.query.filter(Ioc.ioc_value == ioc_value).first()
 
 
-def case_iocs_db_exists(ioc: Ioc) -> bool:
-    """Return True if an IOC with same value and type exists in the same case (excluding same id)."""
-    # Check if this IOC already exists in this specific case
-    case_id = getattr(ioc, 'case_id', None)
-    if not case_id:
-        return False
-    
-    existing = Ioc.query.join(IocLink).filter(
-        func.lower(Ioc.ioc_value) == func.lower(ioc.ioc_value),
-        Ioc.ioc_type_id == ioc.ioc_type_id,
-        IocLink.case_id == case_id,
-        Ioc.ioc_id != getattr(ioc, 'ioc_id', None)
-    ).first()
+def get_filtered_iocs(
+        caseid: int = None,
+        pagination_parameters: PaginationParameters = None,
+        request_parameters: dict = None
+    ):
+    """
+    Get a list of iocs from the database, filtered by the given parameters
+    """
 
-    return existing is not None
-
-
-relationship_model_map = {
-    'user': User,
-    'ioc_type': IocType,
-    'tlp': Tlp,
-    'case': Cases
-}
-
-
-def get_filtered_iocs(case_identifier, pagination_parameters, request_parameters):
-    """Filter/paginate IOCs for a case using the generic filtering helper."""
-    base_filter = and_(IocLink.case_id == case_identifier,
-                       IocLink.ioc_id == Ioc.ioc_id)
-
+    base_filter = and_(IocLink.case_id == caseid,
+                       IocLink.ioc_id == Ioc.ioc_id) if caseid is not None else None
     return get_filtered_data(Ioc, base_filter, pagination_parameters, request_parameters, relationship_model_map)
+
+
+def get_linked_cases_for_ioc(ioc_id, case_identifier, page=1, per_page=50):
+    """Get linked cases for an IOC with pagination support."""
+    search_condition = and_(Cases.case_id.in_([]))
+
+    user_search_limitations = ac_get_fast_user_cases_access(iris_current_user.id)
+    if user_search_limitations:
+        search_condition = and_(Cases.case_id.in_(user_search_limitations))
+
+    query = (IocLink.query.with_entities(
+            Cases.case_id,
+            Cases.name.label('case_name'),
+            Client.name.label('client_name'),
+            Cases.open_date
+        ).filter(
+            and_(
+                IocLink.ioc_id == ioc_id,
+                IocLink.case_id != case_identifier,
+                search_condition
+            )
+        ).join(IocLink.case)
+         .join(Cases.client)
+         .order_by(Cases.open_date.desc())
+    )
+
+    total = query.count()
+    paginated_query = query.limit(per_page).offset((page - 1) * per_page)
+    results = paginated_query.all()
+
+    return {
+        'cases': [row._asdict() for row in results],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page
+    }
 
 
 def search_iocs(search_value):

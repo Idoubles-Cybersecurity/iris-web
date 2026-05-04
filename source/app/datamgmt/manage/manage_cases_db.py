@@ -20,24 +20,21 @@ from datetime import datetime
 from datetime import date
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
-import requests
-from sqlalchemy import and_
+from sqlalchemy import and_, or_, cast, String
 from sqlalchemy.orm import aliased
 from functools import reduce
 
-from app import db
+from app.db import db
 from app.datamgmt.alerts.alerts_db import search_alert_resolution_by_name
 from app.datamgmt.case.case_db import get_case_tags
 from app.datamgmt.manage.manage_case_state_db import get_case_state_by_name
 from app.datamgmt.conversions import convert_sort_direction
 from app.datamgmt.authorization import has_deny_all_access_level
 from app.datamgmt.states import delete_case_states
-from app.models.models import CaseAssets
 from app.models.models import NoteRevisions
-from app.models.models import CaseClassification
-from app.models.models import alert_assets_association
-from app.models.models import CaseStatus
+from app.models.assets import alert_assets_association, CaseAssets
 from app.models.models import TaskAssignee
 from app.models.models import NoteDirectory
 from app.models.models import Tags
@@ -45,15 +42,15 @@ from app.models.models import CaseEventCategory
 from app.models.models import CaseEventsAssets
 from app.models.models import CaseEventsIoc
 from app.models.models import CaseEventsArtifact
-from app.models.models import CaseReceivedFile
 from app.models.models import Artifact
 from app.models.models import ArtifactLink
 from app.models.models import ArtifactAssetLink
 from app.models.models import ArtifactComments
+from app.models.evidences import CaseReceivedFile
 from app.models.models import CaseTasks
-from app.models.cases import Cases
+from app.models.cases import Cases, CaseStatus, CaseClassification
 from app.models.cases import CasesEvent
-from app.models.models import Client
+from app.models.customers import Client
 from app.models.models import DataStoreFile
 from app.models.models import DataStorePath
 from app.models.models import IocAssetLink
@@ -74,9 +71,6 @@ from app.models.iocs import Ioc
 from app.models.cases import CaseProtagonist
 from app.models.cases import CaseTags
 from app.models.cases import CaseState
-from app.models.models import CaseResponse
-from app.datamgmt.manage.manage_webhooks_db import get_webhook_by_id
-from app.models.models import TaskResponse
 from app.models.pagination_parameters import PaginationParameters
 from app.datamgmt.case.case_rfiles_db import delete_evidences_comments_in_case
 from app.datamgmt.case.case_notes_db import delete_notes_comments_in_case
@@ -243,7 +237,7 @@ def reopen_case(case_id):
     if res:
         res.close_date = None
 
-        res.state_id = get_case_state_by_name('Reopened').state_id
+        res.state_id = get_case_state_by_name('Open').state_id
 
         db.session.commit()
         return res
@@ -332,37 +326,59 @@ def get_case_details_rt(case_id):
 def _delete_iocs(case_identifier):
     # TODO should do this with the 2.0 SQLAlchemy API
     # TODO maybe this can be performed automatically with cascades
-    
-    # Get all IOCs in this case
-    ioc_ids = Ioc.query.with_entities(Ioc.ioc_id).filter(Ioc.case_id == case_identifier).all()
-    ioc_ids = [ioc.ioc_id for ioc in ioc_ids]
-    
-    if ioc_ids:
-        # Delete IOC links first (foreign key constraint)
-        IocLink.query.filter(IocLink.ioc_id.in_(ioc_ids)).delete(synchronize_session='fetch')
-        
-        # Delete IOC-asset links
-        IocAssetLink.query.filter(IocAssetLink.ioc_id.in_(ioc_ids)).delete(synchronize_session='fetch')
-    
-    # Delete IOC comments
-    com_ids = IocComments.query.with_entities(
-        IocComments.comment_id
-    ).join(
-        Ioc
-    ).filter(
-        IocComments.comment_ioc_id == Ioc.ioc_id,
-        Ioc.case_id == case_identifier
-    ).all()
+    # Collect IOC ids linked to the case before removing the link rows.
+    ioc_ids = {
+        ioc.ioc_id for ioc in Ioc.query.with_entities(Ioc.ioc_id).filter(Ioc.case_id == case_identifier).all()
+    }
+    ioc_ids.update(
+        ioc_link.ioc_id for ioc_link in IocLink.query.with_entities(IocLink.ioc_id).filter(
+            IocLink.case_id == case_identifier
+        ).all()
+    )
 
-    com_ids = [c.comment_id for c in com_ids]
-    IocComments.query.filter(IocComments.comment_id.in_(com_ids)).delete()
+    # Remove every IOC link for the deleted case so the case FK can be dropped safely.
+    IocLink.query.filter(
+        IocLink.case_id == case_identifier
+    ).delete(synchronize_session=False)
 
-    Comments.query.filter(
-        Comments.comment_id.in_(com_ids)
-    ).delete()
-    
-    # Finally delete the IOCs themselves
-    Ioc.query.filter(Ioc.case_id == case_identifier).delete()
+    for ioc_id in ioc_ids:
+        # Remove IOC-event links for the case being deleted.
+        CaseEventsIoc.query.filter(
+            CaseEventsIoc.ioc_id == ioc_id,
+            CaseEventsIoc.case_id == case_identifier
+        ).delete(synchronize_session=False)
+
+        # Remove IOC-asset links only for assets that belong to the deleted case.
+        IocAssetLink.query.filter(
+            IocAssetLink.ioc_id == ioc_id,
+            IocAssetLink.asset_id.in_(
+                db.session.query(CaseAssets.asset_id).filter(CaseAssets.case_id == case_identifier)
+            )
+        ).delete(synchronize_session=False)
+
+        comment_ids = [row.comment_id for row in Comments.query.with_entities(
+            Comments.comment_id
+        ).join(
+            IocComments,
+            Comments.comment_id == IocComments.comment_id
+        ).filter(
+            IocComments.comment_ioc_id == ioc_id,
+            Comments.comment_case_id == case_identifier
+        ).all()]
+
+        if comment_ids:
+            IocComments.query.filter(
+                IocComments.comment_id.in_(comment_ids)
+            ).delete(synchronize_session=False)
+            Comments.query.filter(
+                Comments.comment_id.in_(comment_ids)
+            ).delete(synchronize_session=False)
+
+        # If the IOC is still linked to another case, keep the IOC and its comments.
+        if IocLink.query.filter(IocLink.ioc_id == ioc_id).first():
+            continue
+
+        Ioc.query.filter(Ioc.ioc_id == ioc_id).delete(synchronize_session=False)
 
 
 def _delete_assets(case_identifier):
@@ -414,11 +430,11 @@ def _delete_notes(case_identifier):
 
 def _delete_tasks(case_identifier):
     from app.models.models import TaskResponse
-    
+
     delete_tasks_comments_in_case(case_identifier)
     tasks = CaseTasks.query.filter(CaseTasks.task_case_id == case_identifier).all()
     for task in tasks:
-        # Delete task_response records first (they reference case_tasks via FK)
+        # Delete task responses first (FK to case_tasks)
         TaskResponse.query.filter(TaskResponse.task == task.id).delete()
         TaskAssignee.query.filter(TaskAssignee.task_id == task.id).delete()
         CaseTasks.query.filter(CaseTasks.id == task.id).delete()
@@ -433,54 +449,46 @@ def _delete_events(case_identifier):
 
 
 def _delete_artifacts(case_identifier):
-    # Get all artifacts linked to this case
     artifact_links = ArtifactLink.query.filter(ArtifactLink.case_id == case_identifier).all()
-    
+
     for artifact_link in artifact_links:
         artifact_id = artifact_link.artifact_id
-        
-        # Delete the case link
+
         ArtifactLink.query.filter(
             and_(
                 ArtifactLink.artifact_id == artifact_id,
                 ArtifactLink.case_id == case_identifier
             )
         ).delete()
-        
-        # Check if artifact is still linked to other cases
+
         other_links = ArtifactLink.query.filter(
             ArtifactLink.artifact_id == artifact_id
         ).first()
-        
-        # If no other case references this artifact, delete it completely
+
         if not other_links:
-            # Delete artifact comments
             comment_ids = ArtifactComments.query.with_entities(
                 ArtifactComments.comment_id
             ).filter(
                 ArtifactComments.comment_artifact_id == artifact_id
             ).all()
-            
+
             for comment_id_row in comment_ids:
                 Comments.query.filter(
                     Comments.comment_id == comment_id_row.comment_id
                 ).delete()
-            
+
             ArtifactComments.query.filter(
                 ArtifactComments.comment_artifact_id == artifact_id
             ).delete()
-            
-            # Delete artifact-asset links
+
             ArtifactAssetLink.query.filter(
                 ArtifactAssetLink.artifact_id == artifact_id
             ).delete()
-            
-            # Delete artifact-event links
+
             CaseEventsArtifact.query.filter(
                 CaseEventsArtifact.artifact_id == artifact_id
             ).delete()
-            
-            # Finally delete the artifact itself
+
             Artifact.query.filter(
                 Artifact.artifact_id == artifact_id
             ).delete()
@@ -648,200 +656,153 @@ def build_filter_case_query(current_user_id,
 
 def get_filtered_cases(current_user_id,
                        pagination_parameters: PaginationParameters,
-                       start_open_date: str = None,
-                       end_open_date: str = None,
-                       case_customer_id: int = None,
-                       case_ids: list = None,
-                       case_name: str = None,
-                       case_description: str = None,
-                       case_classification_id: int = None,
-                       case_owner_id: int = None,
-                       case_opening_user_id: int = None,
-                       case_severity_id: int = None,
-                       case_state_id: int = None,
-                       case_soc_id: str = None,
-                       case_open_since: int = None,
-                       search_value=None,
-                       is_open: bool = None
+                       start_open_date: str | None = None,
+                       end_open_date: str | None = None,
+                       case_customer_id: int | None = None,
+                       case_ids: list[int] | None = None,
+                       case_name: str | None = None,
+                       case_description: str | None = None,
+                       case_classification_id: int | None = None,
+                       case_owner_id: int | None = None,
+                       case_opening_user_id: int | None = None,
+                       case_severity_id: int | None = None,
+                       case_state_id: int | None = None,
+                       case_soc_id: str | None = None,
+                       case_open_since: int | None = None,
+                       search_value: str | None = None,
+                       is_open: bool | None = None,
+                       advanced_filters: list[dict[str, Any]] | None = None,
+                       advanced_logic: str = 'and'
                        ):
-    data = build_filter_case_query(case_classification_id=case_classification_id, case_customer_id=case_customer_id, case_description=case_description,
-                                   case_ids=case_ids, case_name=case_name, case_opening_user_id=case_opening_user_id, case_owner_id=case_owner_id,
-                                   case_severity_id=case_severity_id, case_soc_id=case_soc_id, case_open_since=case_open_since,
-                                   case_state_id=case_state_id, current_user_id=current_user_id, end_open_date=end_open_date,
-                                   search_value=search_value, start_open_date=start_open_date, is_open=is_open,
-                                   sort_by=pagination_parameters.get_order_by(), sort_dir=pagination_parameters.get_direction())
+    kwargs: dict[str, Any] = {
+        'current_user_id': current_user_id,
+        'sort_by': pagination_parameters.get_order_by(),
+        'sort_dir': pagination_parameters.get_direction()
+    }
 
-    return data.paginate(page=pagination_parameters.get_page(), per_page=pagination_parameters.get_per_page(), error_out=False)
+    if start_open_date is not None:
+        kwargs['start_open_date'] = start_open_date
+    if end_open_date is not None:
+        kwargs['end_open_date'] = end_open_date
 
+    if case_customer_id is not None:
+        kwargs['case_customer_id'] = case_customer_id
 
-def execute_and_save_trigger(trigger, case_id):
-    try:
-        # Extract webhook_id from the trigger
-        webhook_id = trigger.get("webhook_id")
-        print(f"Webhook ID: {webhook_id}")  # Debugging: Ensure webhook_id is being accessed
-        if not webhook_id:
-            raise ValueError("Trigger execution failed: webhook_id is missing in trigger.")
+    if case_ids is not None:
+        kwargs['case_ids'] = case_ids
 
-        # Fetch the webhook object from the database
-        webhook = get_webhook_by_id(webhook_id)
-        print(f"Webhook Object: {webhook}")  # Debugging: Log the webhook object
-        if not webhook:
-            raise ValueError(f"Trigger execution failed: No webhook found for webhook_id {webhook_id}.")
+    if case_name is not None:
+        kwargs['case_name'] = case_name
 
-        # Fetch the URL from the webhook object
-        url = webhook.url  # Adjust this based on your webhook model's attributes
-        print(f"Webhook URL: {url}")  # Debugging: Ensure URL is being accessed
-        if not url:
-            raise ValueError(f"Trigger execution failed: URL is missing in webhook with id {webhook_id}.")
+    if case_description is not None:
+        kwargs['case_description'] = case_description
 
-        # Execute the webhook request
-        print(f"Executing webhook request to URL: {url} with data: {trigger}")
-        response = requests.post(url, json=trigger , verify=False)
-        print(f"Webhook Response Status Code: {response.status_code}")  # Log response status
-        print(f"Webhook Response Content: {response.text}")  # Log response content
+    if case_classification_id is not None:
+        kwargs['case_classification_id'] = case_classification_id
 
-        # Check response status
-        if response.status_code == 200:
-            results = response.json()
-            print(f"Webhook Execution Results: {results}")  # Log the result of the execution
-            save_results(results, case_id, webhook_id)  # Assuming save_results is implemented to handle the output
-            return f"Trigger executed successfully and saved for webhook_id {webhook_id}."
-        else:
-            raise ValueError(
-                f"Trigger execution failed: Webhook request returned status {response.status_code}, "
-                f"response: {response.text}"
-            )
+    if case_owner_id is not None:
+        kwargs['case_owner_id'] = case_owner_id
 
-    except Exception as e:
-        print(f"Error in execute_and_save_trigger: {str(e)}")  # Log the error
-        return str(e)
+    if case_opening_user_id is not None:
+        kwargs['case_opening_user_id'] = case_opening_user_id
 
+    if case_severity_id is not None:
+        kwargs['case_severity_id'] = case_severity_id
 
-def save_results(data, case_id, webhook_id):
-    """
-    Save the results of a webhook execution into the CaseResponse model.
-    
-    :param data: The response data to save (JSON).
-    :param case_template_id: The case template ID.
-    :param webhook_id: The webhook ID.
-    """
-    try:
-        # Create a new CaseResponse object
-        case_response = CaseResponse(
-            case=case_id,
-            trigger=webhook_id,
-            body=data,
-        )
+    if case_state_id is not None:
+        kwargs['case_state_id'] = case_state_id
 
-        # Add the object to the session and commit
-        db.session.add(case_response)
-        db.session.commit()
+    if case_soc_id is not None:
+        kwargs['case_soc_id'] = case_soc_id
 
-        print(case_response.id, case_response.case, case_response.trigger, case_response.body, case_response.execution_time)
-        print(f"CaseResponse saved successfully with id {case_response.id}")
-    except Exception as e:
-        db.session.rollback()  # Roll back the session in case of an error
-        print(f"Error saving CaseResponse: {str(e)}")
+    if case_open_since is not None:
+        kwargs['case_open_since'] = case_open_since
 
+    if search_value is not None:
+        kwargs['search_value'] = search_value
 
-def execute_and_save_action(action, task_id, action_id, case_id=None):
-    try:
-        # Extract webhook_id
-        webhook_id = action_id
-        print(f"Webhook ID: {webhook_id}")
-        if not webhook_id:
-            raise ValueError("Action execution failed: webhook_id is missing in action.")
+    if is_open is not None:
+        kwargs['is_open'] = is_open
 
-        # Fetch webhook details
-        webhook = get_webhook_by_id(webhook_id)
-        print(f"Webhook Object: {webhook}")
-        if not webhook:
-            raise ValueError(f"Action execution failed: No webhook found for webhook_id {webhook_id}.")
+    query = build_filter_case_query(**kwargs)
 
-        # Validate the webhook URL
-        url = webhook.url
-        print(f"Webhook URL: {url}")
-        if not url:
-            raise ValueError(f"Action execution failed: URL is missing in webhook with id {webhook_id}.")
+    if advanced_filters:
+        adv_conditions = []
+        joined_client = False
+        joined_state = False
+        joined_owner = False
 
-        # Add case_id to the payload if provided
-        webhook_payload = action.copy() if isinstance(action, dict) else action
-        if case_id is not None:
-            if isinstance(webhook_payload, dict):
-                webhook_payload['case_id'] = case_id
+        for f in advanced_filters:
+            field_id = f.get('fieldId')
+            operation = f.get('operation')
+            value = f.get('value', '')
+
+            if not isinstance(field_id, str) or not isinstance(operation, str) or not isinstance(value, str):
+                continue
+
+            field_expr: Any = None
+
+            if field_id == 'title':
+                field_expr = Cases.name
+            elif field_id == 'case_id':
+                field_expr = cast(Cases.case_id, String)
+            elif field_id == 'outcome':
+                field_expr = Cases.closing_note
+            elif field_id == 'open_date':
+                field_expr = cast(Cases.open_date, String)
+            elif field_id == 'classification':
+                field_expr = cast(Cases.classification_id, String)
+            elif field_id == 'customer':
+                if not joined_client:
+                    query = query.join(Client, Cases.client_id == Client.client_id)
+                    joined_client = True
+                field_expr = Client.name
+            elif field_id == 'state':
+                if not joined_state:
+                    query = query.join(CaseState, Cases.state_id == CaseState.state_id)
+                    joined_state = True
+                field_expr = CaseState.state_name
+            elif field_id == 'owner':
+                if not joined_owner:
+                    query = query.join(User, Cases.owner_id == User.id)
+                    joined_owner = True
+                field_expr = User.user
+
+            if field_expr is None:
+                continue
+
+            op = operation.lower()
+
+            if op == 'empty':
+                adv_conditions.append(or_(field_expr.is_(None), field_expr == ''))
+                continue
+            if op == 'not_empty':
+                adv_conditions.append(and_(field_expr.is_not(None), field_expr != ''))
+                continue
+
+            if op == 'equals':
+                adv_conditions.append(field_expr == value)
+            elif op == 'not':
+                adv_conditions.append(field_expr != value)
+            elif op == 'starts_with':
+                adv_conditions.append(field_expr.ilike(f'{value}%'))
+            elif op == 'not_starts_with':
+                adv_conditions.append(~field_expr.ilike(f'{value}%'))
+            elif op == 'contains':
+                adv_conditions.append(field_expr.ilike(f'%{value}%'))
+            elif op == 'not_contains':
+                adv_conditions.append(~field_expr.ilike(f'%{value}%'))
+            elif op == 'ends_with':
+                adv_conditions.append(field_expr.ilike(f'%{value}'))
+            elif op == 'not_ends_with':
+                adv_conditions.append(~field_expr.ilike(f'%{value}'))
+
+        if adv_conditions:
+            if (advanced_logic or 'and').lower() == 'or':
+                query = query.filter(or_(*adv_conditions))
             else:
-                webhook_payload = {'case_id': case_id, 'data': webhook_payload}
+                query = query.filter(and_(*adv_conditions))
 
-        # Execute the webhook request
-        print(f"Executing webhook request to URL: {url} with data: {webhook_payload}")
-        response = requests.post(url, json=webhook_payload, verify=False)
-        print(f"Webhook Response Status Code: {response.status_code}")
-        print(f"Webhook Response Content: {response.text}")
-
-        # Validate and process the response
-        if response.status_code == 200:
-            if 'application/json' in response.headers.get('Content-Type', ''):
-                results = response.json()
-                print(f"Webhook Execution Results: {results}")
-
-                # Save results in the database
-                save_results_for_tasks(results, task_id, webhook_id)
-
-                # Ensure results are a list of dictionaries
-                if isinstance(results, dict):
-                    results = [results]  # Wrap single dictionary in a list
-                elif not isinstance(results, list):
-                    raise ValueError("Unexpected response format: Expected a dictionary or a list of dictionaries.")
-
-                return results
-            else:
-                raise ValueError("Webhook response is not in JSON format.")
-        else:
-            raise ValueError(
-                f"Action execution failed: Webhook request returned status {response.status_code}, "
-                f"response: {response.text}"
-            )
-
-    except Exception as e:
-        print(f"Error in execute_and_save_action: {str(e)}")
-        raise  # Propagate the exception for handling in the calling function
-
-
-
-def save_results_for_tasks(data, task_id, webhook_id):
-    """
-    Save the results of an action execution into the TaskResponse model.
-    :param data: The response data to save (JSON, list of dictionaries or dictionary).
-    :param task_id: The task ID.
-    :param webhook_id: The webhook ID.
-    """
-    from app.blueprints.iris_user import iris_current_user
-    
-    try:
-        # Ensure data is a list of dictionaries
-        if isinstance(data, dict):
-            data = [data]
-        elif not isinstance(data, list):
-            raise ValueError("Unexpected data format: Expected a dictionary or list of dictionaries.")
-
-        for item in data:
-            # Create a new TaskResponse object for each result
-            task_response = TaskResponse(
-                task=task_id,
-                action=webhook_id,
-                body=item,  # Assuming item is JSON-serializable
-                created_by_user_id=iris_current_user.id
-            )
-
-            # Add the object to the session
-            db.session.add(task_response)
-
-        # Commit all changes at once
-        db.session.commit()
-
-        print(f"TaskResponses saved successfully for task ID {task_id}")
-
-    except Exception as e:
-        db.session.rollback()  # Roll back the session in case of an error
-        print(f"Error saving TaskResponse: {str(e)}")
-        raise
+    return query.paginate(page=pagination_parameters.get_page(),
+                          per_page=pagination_parameters.get_per_page(),
+                          error_out=False)

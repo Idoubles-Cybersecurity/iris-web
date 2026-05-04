@@ -24,7 +24,7 @@ from app.datamgmt.states import update_artifact_state
 from app.iris_engine.access_control.utils import ac_get_fast_user_cases_access
 from app.models.models import CaseEventsArtifact
 from app.models.cases import Cases
-from app.models.models import Client
+from app.models.customers import Client
 from app.models.models import Comments
 from app.models.models import Artifact
 from app.models.models import ArtifactAssetLink

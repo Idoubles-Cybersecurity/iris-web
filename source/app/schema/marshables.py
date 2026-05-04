@@ -18,9 +18,7 @@
 
 import datetime
 import dateutil.parser
-import marshmallow
 import os
-import psycopg2
 import pyminizip
 import random
 import re
@@ -37,7 +35,6 @@ from marshmallow.validate import Length
 from marshmallow_sqlalchemy import auto_field
 from pathlib import Path
 from sqlalchemy import func
-from sqlalchemy.orm import aliased
 from typing import Any
 from typing import Dict
 from typing import List
@@ -45,9 +42,9 @@ from typing import Optional
 from typing import Tuple
 from typing import Union
 from werkzeug.datastructures import FileStorage
-from app import db
+from app.business.customers import customers_exists_another_with_same_name
+from app.db import db
 from app import ma
-from app import app
 from app.blueprints.iris_user import iris_current_user
 from app.logger import logger
 from app.datamgmt.datastore.datastore_db import datastore_get_standard_path
@@ -55,32 +52,30 @@ from app.datamgmt.manage.manage_attribute_db import merge_custom_attributes
 from app.datamgmt.manage.manage_tags_db import add_db_tag
 from app.datamgmt.case.case_iocs_db import get_ioc_links
 from app.iris_engine.access_control.utils import ac_mask_from_val_list
-from app.models.models import AnalysisStatus
-from app.models.models import CaseClassification
 from app.models.models import SavedFilter
 from app.models.models import DataStorePath
 from app.models.models import IrisModuleHook
 from app.models.models import Tags
 from app.models.models import ReviewStatus
-from app.models.models import EvidenceTypes
-from app.models.models import CaseStatus
+from app.models.evidences import EvidenceTypes, CaseReceivedFile
 from app.models.models import NoteDirectory
 from app.models.models import NoteRevisions
-from app.models.models import AssetsType
-from app.models.models import CaseAssets
-from app.models.models import CaseReceivedFile
+from app.models.assets import AssetsType, CaseAssets, AnalysisStatus
 from app.models.models import CaseTasks
-from app.models.cases import Cases
+from app.models.cases import Cases, CaseStatus, CaseClassification
 from app.models.cases import CasesEvent
-from app.models.models import Client
+from app.models.customers import Client
 from app.models.comments import Comments
 from app.models.models import Contact
+from app.models.models import Artifact
+from app.models.models import TaskResponse
+from app.models.models import CaseResponse
+from app.models.models import Webhook
 from app.models.models import DataStoreFile
 from app.models.models import EventCategory
 from app.models.models import GlobalTasks
 from app.models.iocs import Ioc
 from app.models.models import IocType
-from app.models.models import Artifact
 from app.models.models import IrisModule
 from app.models.models import Notes
 from app.models.models import NotesGroup
@@ -103,13 +98,12 @@ from app.schema.utils import str_to_bool
 from app.business.users import get_primary_organisation
 from app.business.users import get_organisations
 from app.datamgmt.case.assets_type import get_asset_type_by_name_case_insensitive
+from app.iris_engine.access_control.utils import ac_get_fast_user_cases_access
 
 
 ALLOWED_EXTENSIONS = {'png', 'svg'}
 POSTGRES_INT_MAX = 2147483647
 POSTGRES_BIGINT_MAX = 9223372036854775807
-
-log = app.logger
 
 
 def allowed_file_icon(filename: str):
@@ -165,9 +159,8 @@ def store_icon(file):
 
     try:
         store_fullpath = os.path.join(current_app.config['ASSET_STORE_PATH'], filename)
-        show_fullpath = os.path.join(current_app.config['APP_PATH'], 'app',
-                                     current_app.config['ASSET_SHOW_PATH'].strip(os.path.sep),
-                                     filename)
+        show_fullpath = os.path.join(current_app.config['APP_PATH'],
+                                     current_app.config['ASSET_SHOW_PATH'].strip(os.path.sep), filename)
         file.save(store_fullpath)
         os.symlink(store_fullpath, show_fullpath)
 
@@ -635,11 +628,11 @@ class AssetTypeSchema(ma.SQLAlchemyAutoSchema):
         """
 
         assert_type_mml(input_var=data.asset_name,
-                        field_name="asset_name",
+                        field_name='asset_name',
                         type=str)
 
         assert_type_mml(input_var=data.asset_id,
-                        field_name="asset_id",
+                        field_name='asset_id',
                         type=int,
                         allow_none=True)
 
@@ -690,12 +683,11 @@ class CaseAssetsSchema(ma.SQLAlchemyAutoSchema):
     asset_name: str = auto_field('asset_name', required=True, allow_none=False)
     asset_type_id: str = auto_field('asset_type_id', required=True, allow_none=False)
     ioc_links: List[int] = fields.List(fields.Integer, required=False)
-    artifact_links: List[int] = fields.List(fields.Integer, required=False)
     asset_enrichment: str = auto_field('asset_enrichment', required=False)
     asset_type: AssetTypeSchema = ma.Nested(AssetTypeSchema, required=False)
     alerts = fields.Nested('AlertSchema', many=True, exclude=['assets'])
     analysis_status = fields.Nested('AnalysisStatusSchema', required=False)
-    #iocs = fields.Nested('IocSchemaForAPIV2', many=True, only=['ioc_id'])
+    iocs = fields.Nested('IocSchemaForAPIV2', many=True, only=['ioc_id'])
 
     class Meta:
         model = CaseAssets
@@ -703,54 +695,6 @@ class CaseAssetsSchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
         load_instance = True
         unknown = EXCLUDE
-
-    @staticmethod
-    def is_unique_for_customer(customer_id, request_data):
-        """
-        Check if the asset is unique for the customer
-        """
-
-        if request_data.get('asset_name') is None:
-            raise marshmallow.exceptions.ValidationError("Asset name is required",
-                                                         field_name="asset_name")
-
-        case_alias = aliased(Cases)
-        asset_alias = aliased(CaseAssets)
-
-        asset = db.session.query(
-            asset_alias.asset_id
-        ).join(
-            case_alias, asset_alias.case_id == case_alias.case_id
-        ).filter(
-            func.lower(asset_alias.asset_name) == request_data.get('asset_name').lower(),
-            asset_alias.asset_type_id == request_data.get('asset_type_id'),
-            asset_alias.asset_id != request_data.get('asset_id'),
-            case_alias.client_id == customer_id
-        ).first()
-        if asset is not None:
-            return asset
-
-        return None
-
-    def is_unique_for_customer_from_cid(self, case_id, request_data):
-        """
-        Check if the asset is unique for the customer
-        """
-
-        case_alias = aliased(Cases)
-
-        customer_id = db.session.query(
-            case_alias.client_id
-        ).filter(
-            case_alias.case_id == case_id
-        ).first()
-
-        if customer_id is None:
-            raise marshmallow.exceptions.ValidationError("Case not found")
-
-        customer_id = customer_id[0]
-
-        return self.is_unique_for_customer(customer_id, request_data)
 
     @staticmethod
     def is_unique_for_cid(case_id, request_data):
@@ -841,99 +785,6 @@ class CaseAssetsSchema(ma.SQLAlchemyAutoSchema):
         return data
 
 
-class TaskResponseSchema(ma.Schema):
-    """Schema for serializing and deserializing Task Response objects.
-    This schema defines the fields to include when serializing and deserializing Task Response objects.
-    It includes fields for the task response ID, the task ID of the user who created the template, the creation and update
-    timestamps, the task, action, body and execution time of the Task Response.
-    """
-    id: int = fields.Integer(dump_only=True)
-    created_by_user_id: int = fields.Integer(required=True)
-    created_at: datetime = fields.DateTime(dump_only=True)
-    updated_at: datetime = fields.DateTime(dump_only=True)
-
-    task: int = fields.Integer(dump_only=True)
-    action: int = fields.Integer(dump_only=True)
-    body: Optional[dict] = fields.Dict(allow_none=True, missing={})
-    execution_time: datetime = fields.DateTime(dump_only=True)
-    created_by_user: fields.Nested = fields.Nested('UserSchema', only=['name'], dump_only=True)
-
-class CaseResponseSchema(ma.Schema):
-    """Schema for serializing and deserializing Case Response objects.
-    This schema defines the fields to include when serializing and deserializing case Response objects.
-    It includes fields for the case response ID, the task ID of the user who created the template, the creation and update
-    timestamps, the case, action, body and execution time of the Case Response.
-    """
-    id: int = fields.Integer(dump_only=True)
-    created_by_user_id: int = fields.Integer(required=True)
-    created_at: datetime = fields.DateTime(dump_only=True)
-    updated_at: datetime = fields.DateTime(dump_only=True)
-
-    case: int = fields.Integer(dump_only=True)
-    trigger: int = fields.Integer(dump_only=True)
-    body: Optional[dict] = fields.Dict(allow_none=True, missing={})
-    execution_time: datetime = fields.DateTime(dump_only=True)
-    created_by_user: fields.Nested = fields.Nested('UserSchema', only=['name'], dump_only=True)
-
-class WebhookSchema(ma.Schema):
-    """Schema for serializing and deserializing Webhook objects.
-    This schema defines the fields to include when serializing and deserializing Webhook objects.
-    It includes fields for the template ID, the user ID of the user who created the template, the creation and update
-    timestamps, the name, header authentication, payload schema and URL of the Webhook.
-    """
-    id: int = fields.Integer(dump_only=True)
-    created_by_user_id: int = fields.Integer(required=True)
-    created_at: datetime = fields.DateTime(dump_only=True)
-    updated_at: datetime = fields.DateTime(dump_only=True)
-    name: str = fields.String(required=True)
-    header_auth: Optional[List[Dict[str, str]]] = fields.List(fields.Dict(), allow_none=True, missing=[])
-
-    url: Optional[str] = fields.String(allow_none=True, missing="")
-
-    payload_schema: Optional[dict] = fields.Dict(allow_none=True, missing={})
-
-    def validate_string_or_list(value: Union[str, List[str]]) -> Union[str, List[str]]:
-        """Validates that a value is a string or a list of strings.
-        This method validates that a value is either a string or a list of strings. If the value is a list, it also
-        validates that all items in the list are strings.
-        Args:
-            value: The value to validate.
-        Returns:
-            The validated value.
-        Raises:
-            ValidationError: If the value is not a string or a list of strings.
-        """
-        if not isinstance(value, (str, list)):
-            raise ValidationError('Value must be a string or a list of strings')
-        if isinstance(value, list):
-            for item in value:
-                if not isinstance(item, str):
-                    raise ValidationError('All items in list must be strings')
-        return value
-
-    def validate_string_or_list_of_dict(value: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
-        """Validates that a value is a string or a list of dictionaries with string values.
-        This method validates that a value is either a string or a list of dictionaries with string values. If the value
-        is a list, it also validates that all items in the list are dictionaries with string values.
-        Args:
-            value: The value to validate.
-        Returns:
-            The validated value.
-        Raises:
-            ValidationError: If the value is not a string or a list of dictionaries with string values.
-        """
-        if not isinstance(value, (str, list)):
-            raise ValidationError('Value must be a string or a list of strings')
-        if isinstance(value, list):
-            for item in value:
-                if not isinstance(item, dict):
-                    raise ValidationError('All items in list must be dict')
-                for ivalue in item.values():
-                    if not isinstance(ivalue, str):
-                        raise ValidationError('All items in dict must be str')
-        return value
-
-
 class CaseTemplateSchema(ma.Schema):
     """Schema for serializing and deserializing CaseTemplate objects.
 
@@ -955,11 +806,12 @@ class CaseTemplateSchema(ma.Schema):
     title_prefix: Optional[str] = fields.String(allow_none=True, validate=Length(max=32), missing="")
     summary: Optional[str] = fields.String(allow_none=True, missing="")
     tags: Optional[List[str]] = fields.List(fields.String(), allow_none=True, missing=[])
-    input_params: Optional[List[str]] = fields.List(fields.String(), allow_none=True, missing=[])
+    tasks: Optional[list] = fields.Raw(allow_none=True, missing=[])
+    note_directories: Optional[list] = fields.Raw(allow_none=True, missing=[])
+    actions: Optional[list] = fields.Raw(allow_none=True)
+    triggers: Optional[list] = fields.Raw(allow_none=True, missing=[])
+    input_params: Optional[dict] = fields.Raw(allow_none=True, missing={})
     classification: Optional[str] = fields.String(allow_none=True, missing="")
-    note_directories: Optional[List[Dict[str, Union[str, List[Dict[str, str]]]]]] = fields.List(fields.Dict(),
-                                                                                                allow_none=True,
-                                                                                                missing=[])
 
     @staticmethod
     def validate_string_or_list(value: Union[str, List[str]]) -> Union[str, List[str]]:
@@ -1014,22 +866,8 @@ class CaseTemplateSchema(ma.Schema):
                         raise ValidationError('All items in dict must be str')
         return value
 
-    tasks: Optional[List[Dict[str, Union[str, List[str]]]]] = fields.List(
-        fields.Dict(keys=fields.Str(), values=fields.Raw()), 
-        allow_none=True,
-        missing=[]
-    )
-
-    actions: Optional[List[Dict[str, Union[str, List[str]]]]] = fields.List(
-        fields.Dict(keys=fields.Str(), values=fields.Raw(validate=[validate_string_or_list])),
-        allow_none=True
-    )
-
-    triggers: Optional[List[Dict[str, Union[str, List[str]]]]] = fields.List(
-        fields.Dict(keys=fields.Str(), values=fields.Raw()),
-        allow_none=True,
-        missing=[]
-    )
+    class Meta:
+        unknown = EXCLUDE
 
 
 class IocTypeSchema(ma.SQLAlchemyAutoSchema):
@@ -1077,30 +915,9 @@ class IocTypeSchema(ma.SQLAlchemyAutoSchema):
             raise ValidationError("IOC type name already exists", field_name="type_name")
 
         return data
-    
-class ArtifactTypeSchema(ma.SQLAlchemyAutoSchema):
-    """Schema for serializing and deserializing ArtifactType objects.
-This schema defines the fields to include when serializing and deserializing ArtifactType objects.
-    It includes fields for the IOC type name, description, taxonomy, validation regex, and validation expectation.
-    It also includes a method for verifying that the IOC type name is unique.
-    """
-
-    type_name: str = auto_field('type_name', required=True, validate=Length(min=2), allow_none=False)
-    type_description: str = auto_field('type_description', required=True, validate=Length(min=2), allow_none=False)
-    type_taxonomy: Optional[str] = auto_field('type_taxonomy')
-    type_validation_regex: Optional[str] = auto_field('type_validation_regex')
-    type_validation_expect: Optional[str] = auto_field('type_validation_expect')
-
-    class Meta:
-        model = IocType
-        load_instance = True
-        include_fk = True
-        unknown = EXCLUDE
 
 
 class TlpSchema(ma.SQLAlchemyAutoSchema):
-    """Schema for serializing and deserializing TLP objects."""
-
     class Meta:
         model = Tlp
         load_instance = True
@@ -1121,10 +938,19 @@ class IocSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
     ioc_enrichment: Optional[Dict[str, Any]] = auto_field('ioc_enrichment', required=False)
     ioc_type: Optional[IocTypeSchema] = ma.Nested(IocTypeSchema, required=False)
     tlp = ma.Nested(TlpSchema)
-    modification_history: str = auto_field('modification_history', required=False, readonly=True)
 
     def get_link(self, ioc):
-        ial = get_ioc_links(ioc.ioc_id, ioc.case_id)
+        # Prefer the case id from schema context (viewing case), fall back to IOC's stored case_id
+        caseid = None
+        try:
+            caseid = self.context.get('caseid') if getattr(self, 'context', None) else None
+        except Exception:
+            caseid = None
+
+        if caseid is None:
+            caseid = getattr(ioc, 'case_id', None)
+
+        ial = get_ioc_links(ioc.ioc_id, caseid)
         return [row._asdict() for row in ial]
 
     link = ma.Method('get_link')
@@ -1209,35 +1035,48 @@ class IocSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
         return data
 
 
+class IocSchema(ma.SQLAlchemyAutoSchema):
+    """Schema for serializing and deserializing IOC objects.
 
-IocSchema = IocSchemaForAPIV2
-
-
-class ArtifactSchema(ma.SQLAlchemyAutoSchema):
-    """Schema for serializing and deserializing Artifact objects.
-
-    This schema defines the fields to include when serializing and deserializing Artifact objects.
-    It includes fields for the Artifact value, enrichment data, and the Artifact type associated with the Artifact.
-    It also includes methods for verifying the format of the Artifact value and merging custom attributes.
+    This schema defines the fields to include when serializing and deserializing IOC objects.
+    It includes fields for the IOC value, enrichment data, and the IOC type associated with the IOC.
+    It also includes methods for verifying the format of the IOC value and merging custom attributes.
 
     """
-    artifact_value: str = auto_field('artifact_value', required=True, validate=Length(min=1), allow_none=False)
-    artifact_enrichment: Optional[Dict[str, Any]] = auto_field('artifact_enrichment', required=False)
-    artifact_type: Optional[ArtifactTypeSchema] = ma.Nested(ArtifactTypeSchema, required=False)
+    ioc_value: str = auto_field('ioc_value', required=True, validate=Length(min=1), allow_none=False)
+    ioc_enrichment: Optional[Dict[str, Any]] = auto_field('ioc_enrichment', required=False)
+    ioc_type: Optional[IocTypeSchema] = ma.Nested(IocTypeSchema, required=False)
+
+    def get_link(self, ioc):
+        # Prefer the case id from schema context (viewing case), fall back to IOC's stored case_id
+        caseid = None
+        try:
+            caseid = self.context.get('caseid') if getattr(self, 'context', None) else None
+        except Exception:
+            caseid = None
+
+        if caseid is None:
+            caseid = getattr(ioc, 'case_id', None)
+
+        ial = get_ioc_links(ioc.ioc_id, caseid)
+        return [row._asdict() for row in ial]
+
+    link = ma.Method('get_link')
 
     class Meta:
-        model = Artifact
+        model = Ioc
+        sqla_session = db.session
         load_instance = True
         include_fk = True
         unknown = EXCLUDE
 
     @pre_load
     def verify_data(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
-        """Verifies the format of the Artifact value and associated Artifact type.
+        """Verifies the format of the IOC value and associated IOC type.
 
-        This method verifies that the Artifact value specified in the data matches the expected format for the associated
-        Artifact type. If the value does not match the expected format, it raises a validation error. It also verifies that
-        the specified Artifact type ID and TLP ID are valid.
+        This method verifies that the IOC value specified in the data matches the expected format for the associated
+        IOC type. If the value does not match the expected format, it raises a validation error. It also verifies that
+        the specified IOC type ID and TLP ID are valid.
 
         Args:
             data: The data to verify.
@@ -1247,43 +1086,87 @@ class ArtifactSchema(ma.SQLAlchemyAutoSchema):
             The verified data.
 
         Raises:
-            ValidationError: If the Artifact value does not match the expected format or if the specified Artifact type ID or
+            ValidationError: If the IOC value does not match the expected format or if the specified IOC type ID or
             TLP ID are invalid.
 
         """
-        if data.get('artifact_type_id'):
-            assert_type_mml(input_var=data.get('artifact_type_id'), field_name="artifact_type_id", type=int)
-            # artifact_type = ArtifactType.query.filter(ArtifactType.type_id == data.get('artifact_type_id')).first()
-            artifact_type = IocType.query.filter(IocType.type_id == data.get('artifact_type_id')).first()
-            if not artifact_type:
-                raise marshmallow.exceptions.ValidationError("Invalid Artifact type ID", field_name="artifact_type_id")
+        if data.get('ioc_type_id'):
+            assert_type_mml(input_var=data.get('ioc_type_id'), field_name='ioc_type_id', type=int)
+            ioc_type = IocType.query.filter(IocType.type_id == data.get('ioc_type_id')).first()
+            if not ioc_type:
+                raise ValidationError('Invalid IOC type ID', field_name='ioc_type_id')
 
-            if artifact_type.type_validation_regex:
-                if not re.fullmatch(artifact_type.type_validation_regex, data.get('artifact_value'), re.IGNORECASE):
-                    error = f"The input doesn\'t match the expected format " \
-                            f"(expected: {artifact_type.type_validation_expect or artifact_type.type_validation_regex})"
-                    raise marshmallow.exceptions.ValidationError(error, field_name="artifact_artifact_value")
+            if ioc_type.type_validation_regex:
+                if not re.fullmatch(ioc_type.type_validation_regex, data.get('ioc_value'), re.IGNORECASE):
+                    error = f'The input doesn\'t match the expected format ' \
+                            f'(expected: {ioc_type.type_validation_expect or ioc_type.type_validation_regex})'
+                    raise ValidationError(error, field_name="ioc_ioc_value")
 
-        if data.get('artifact_tlp_id'):
-            assert_type_mml(input_var=data.get('artifact_tlp_id'), field_name="artifact_tlp_id", type=int,
+        if data.get('ioc_tlp_id'):
+            assert_type_mml(input_var=data.get('ioc_tlp_id'), field_name='ioc_tlp_id', type=int,
                             max_val=POSTGRES_INT_MAX)
 
+            Tlp.query.filter(Tlp.tlp_id == data.get('ioc_tlp_id')).count()
+
+        if data.get('ioc_tags'):
+            for tag in data.get('ioc_tags').split(','):
+                if not isinstance(tag, str):
+                    raise ValidationError('All items in list must be strings', field_name='ioc_tags')
+                add_db_tag(tag.strip())
+
+        return data
+
+
+class ArtifactSchema(ma.SQLAlchemyAutoSchema):
+    artifact_value: str = auto_field('artifact_value', required=True, validate=Length(min=1), allow_none=False)
+    artifact_type: Optional[IocTypeSchema] = ma.Nested(IocTypeSchema, required=False)
+
+    class Meta:
+        model = Artifact
+        sqla_session = db.session
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+
+    @pre_load
+    def verify_data(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        if data.get('artifact_type_id'):
+            assert_type_mml(input_var=data.get('artifact_type_id'), field_name='artifact_type_id', type=int)
+            ioc_type = IocType.query.filter(IocType.type_id == data.get('artifact_type_id')).first()
+            if not ioc_type:
+                raise ValidationError('Invalid Artifact type ID', field_name='artifact_type_id')
+
+        if data.get('artifact_tlp_id'):
+            assert_type_mml(input_var=data.get('artifact_tlp_id'), field_name='artifact_tlp_id', type=int,
+                            max_val=POSTGRES_INT_MAX)
             Tlp.query.filter(Tlp.tlp_id == data.get('artifact_tlp_id')).count()
 
         if data.get('artifact_tags'):
             for tag in data.get('artifact_tags').split(','):
                 if not isinstance(tag, str):
-                    raise marshmallow.exceptions.ValidationError("All items in list must be strings",
-                                                                 field_name="artifact_tags")
+                    raise ValidationError('All items in list must be strings', field_name='artifact_tags')
                 add_db_tag(tag.strip())
 
         return data
 
     @post_load
     def custom_attributes_merge(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
-        """Merges custom attributes with the Artifact data.
+        new_attr = data.get('custom_attributes')
+        if new_attr is not None:
+            assert_type_mml(input_var=data.get('artifact_id'),
+                            field_name='artifact_id',
+                            type=int,
+                            allow_none=True)
 
-        This method merges any custom attributes specified in the data with the Artifact data. If no custom attributes are
+            data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('artifact_id'), 'artifact')
+
+        return data
+
+    @post_load
+    def custom_attributes_merge(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Merges custom attributes with the IOC data.
+
+        This method merges any custom attributes specified in the data with the IOC data. If no custom attributes are
         specified, it returns the original data.
 
         Args:
@@ -1296,12 +1179,12 @@ class ArtifactSchema(ma.SQLAlchemyAutoSchema):
         """
         new_attr = data.get('custom_attributes')
         if new_attr is not None:
-            assert_type_mml(input_var=data.get('artifact_id'),
-                            field_name="artifact_id",
+            assert_type_mml(input_var=data.get('ioc_id'),
+                            field_name="ioc_id",
                             type=int,
                             allow_none=True)
 
-            data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('artifact_id'), 'artifact')
+            data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('ioc_id'), 'ioc')
 
         return data
 
@@ -1335,10 +1218,9 @@ class EventSchema(ma.SQLAlchemyAutoSchema):
     event_title: str = auto_field('event_title', required=True, validate=Length(min=2), allow_none=False)
     event_assets: List[int] = fields.List(fields.Integer, required=True, allow_none=False)
     event_iocs: List[int] = fields.List(fields.Integer, required=True, allow_none=False)
-    event_artifacts: List[int] = fields.List(fields.Integer, required=True, allow_none=False)
     event_date: datetime = fields.DateTime("%Y-%m-%dT%H:%M:%S.%f", required=True, allow_none=False)
     event_tz: str = fields.String(required=True, allow_none=False)
-    event_category_id: int = fields.Integer(required=True, allow_none=False)
+    event_category_id: int = ma.Method('get_event_category_id')
     event_date_wtz: datetime = fields.DateTime("%Y-%m-%dT%H:%M:%S.%f", required=False, allow_none=False)
     modification_history: str = auto_field('modification_history', required=False, readonly=True)
     event_comments_map: List[int] = fields.List(fields.Integer, required=False, allow_none=True)
@@ -1400,7 +1282,7 @@ class EventSchema(ma.SQLAlchemyAutoSchema):
         if data is None:
             raise ValidationError('Received empty data')
 
-        for field in ['event_title', 'event_date', 'event_tz', 'event_category_id', 'event_assets', 'event_iocs', 'event_artifacts']:
+        for field in ['event_title', 'event_date', 'event_tz', 'event_category_id', 'event_assets', 'event_iocs']:
             if field not in data:
                 raise ValidationError(f'Missing field {field}', field_name=field)
 
@@ -1429,10 +1311,6 @@ class EventSchema(ma.SQLAlchemyAutoSchema):
         assert_type_mml(input_var=data.get('event_iocs'),
                         field_name='event_iocs',
                         type=list)
-        
-        assert_type_mml(input_var=data.get('event_artifacts'),
-                        field_name='event_artifacts',
-                        type=list)
 
         for ioc in data.get('event_iocs'):
 
@@ -1443,16 +1321,6 @@ class EventSchema(ma.SQLAlchemyAutoSchema):
             ast = Ioc.query.filter(Ioc.ioc_id == ioc).count()
             if not ast:
                 raise ValidationError("Invalid IOC ID", field_name="event_assets")
-
-        for artifact in data.get('event_artifacts'):
-
-            assert_type_mml(input_var=int(artifact),
-                            field_name='event_artifacts',
-                            type=int)
-
-            ast = Artifact.query.filter(Artifact.artifact_id == artifact).count()
-            if not ast:
-                raise marshmallow.exceptions.ValidationError("Invalid Artifact ID", field_name="event_assets")
 
         if data.get('event_color') and data.get('event_color') not in ['#fff', '#1572E899', '#6861CE99', '#48ABF799',
                                                                        '#31CE3699', '#F2596199', '#FFAD4699']:
@@ -1591,7 +1459,7 @@ class DSFileSchema(ma.SQLAlchemyAutoSchema):
 
         return dsf, exists
 
-    def ds_store_file(self, file_storage: FileStorage, location: Path, is_ioc: bool, password: Optional[str], is_artifact:bool=False) -> Tuple[
+    def ds_store_file(self, file_storage: FileStorage, location: Path, is_ioc: bool, password: Optional[str]) -> Tuple[
         str, int, str]:
         """Stores a file in the data store.
 
@@ -1992,6 +1860,16 @@ class CustomerSchema(ma.SQLAlchemyAutoSchema):
         exclude = ['name', 'client_id', 'description', 'sla']
         unknown = EXCLUDE
 
+    @pre_load
+    def verify_unique_name(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        if 'customer_name' not in data:
+            return data
+        identifier = data.get('customer_id')
+        name = data['customer_name']
+        if customers_exists_another_with_same_name(identifier, name):
+            raise ValidationError('Customer already exists', field_name='customer_name')
+        return data
+
     @post_load
     def verify_unique(self, data: Client, **kwargs: Any) -> Client:
         """Verifies that the customer name is unique.
@@ -2017,13 +1895,6 @@ class CustomerSchema(ma.SQLAlchemyAutoSchema):
                         field_name='customer_id',
                         type=int,
                         allow_none=True)
-
-        client = Client.query.filter(
-            func.upper(Client.name) == data.name.upper(),
-            Client.client_id != data.client_id
-        ).first()
-        if client:
-            raise ValidationError("Customer already exists", field_name="customer_name")
 
         return data
 
@@ -2187,6 +2058,34 @@ class CaseTaskSchema(ma.SQLAlchemyAutoSchema):
             data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('id'), 'task')
 
         return data
+
+
+class TaskResponseSchema(ma.SQLAlchemyAutoSchema):
+    created_by_user: fields.Nested = fields.Nested('UserSchema', only=['name'], dump_only=True)
+
+    class Meta:
+        model = TaskResponse
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+
+
+class CaseResponseSchema(ma.SQLAlchemyAutoSchema):
+    created_by_user: fields.Nested = fields.Nested('UserSchema', only=['name'], dump_only=True)
+
+    class Meta:
+        model = CaseResponse
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+
+
+class WebhookSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Webhook
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
 
 
 class CaseEvidenceSchema(ma.SQLAlchemyAutoSchema):
@@ -2365,7 +2264,7 @@ class AuthorizationOrganisationSchema(ma.SQLAlchemyAutoSchema):
 
         for organisation in organisations:
             if data.get('org_id') is None or organisation.org_id != data.get('org_id'):
-                raise ValidationError("Organisation name already exists", field_name="org_name")
+                raise ValidationError('Organisation name already exists', field_name='org_name')
 
         return data
 
@@ -2390,89 +2289,6 @@ class BasicUserSchema(ma.SQLAlchemyAutoSchema):
         exclude = ['password', 'api_key', 'ctx_case', 'ctx_human_case', 'active', 'external_id', 'in_dark_mode',
                    'id', 'name', 'email', 'user', 'uuid']
         unknown = EXCLUDE
-
-
-def validate_ioc_type(type_id: int) -> None:
-    """Validates the IOC type ID.
-
-    This function validates the IOC type ID by checking if it exists in the database.
-    If the ID is invalid, it raises a validation error.
-
-    Args:
-        type_id: The IOC type ID to validate.
-
-    Raises:
-        ValidationError: If the IOC type ID is invalid.
-
-    """
-    if not IocType.query.get(type_id):
-        raise ValidationError("Invalid ioc_type ID")
-
-
-def validate_ioc_tlp(tlp_id: int) -> None:
-    """Validates the IOC TLP ID.
-
-    This function validates the IOC TLP ID by checking if it exists in the database.
-    If the ID is invalid, it raises a validation error.
-
-    Args:
-        tlp_id: The IOC TLP ID to validate.
-
-    Raises:
-        ValidationError: If the IOC TLP ID is invalid.
-
-    """
-    if not Tlp.query.get(tlp_id):
-        raise ValidationError("Invalid ioc_tlp ID")
-
-def validate_artifact_tlp(tlp_id: int) -> None:
-    """Validates the Artifact TLP ID.
-
-    This function validates the Artifact TLP ID by checking if it exists in the database.
-    If the ID is invalid, it raises a validation error.
-
-    Args:
-        tlp_id: The Artifact TLP ID to validate.
-
-    Raises:
-        ValidationError: If the Artifact TLP ID is invalid.
-
-    """
-    if not Tlp.query.get(tlp_id):
-        raise ValidationError("Invalid artifact_tlp ID")
-
-def validate_asset_type(asset_id: int) -> None:
-    """Validates the asset type ID.
-
-    This function validates the asset type ID by checking if it exists in the database.
-    If the ID is invalid, it raises a validation error.
-
-    Args:
-        asset_id: The asset type ID to validate.
-
-    Raises:
-        ValidationError: If the asset type ID is invalid.
-
-    """
-    if not AssetsType.query.get(asset_id):
-        raise ValidationError("Invalid asset_type ID")
-
-
-def validate_asset_tlp(tlp_id: int) -> None:
-    """Validates the asset TLP ID.
-
-    This function validates the asset TLP ID by checking if it exists in the database.
-    If the ID is invalid, it raises a validation error.
-
-    Args:
-        tlp_id: The asset TLP ID to validate.
-
-    Raises:
-        ValidationError: If the asset TLP ID is invalid.
-
-    """
-    if not Tlp.query.get(tlp_id):
-        raise ValidationError("Invalid asset_tlp ID")
 
 
 class SeveritySchema(ma.SQLAlchemyAutoSchema):
@@ -2531,11 +2347,19 @@ class EventCategorySchema(ma.SQLAlchemyAutoSchema):
         unknown = EXCLUDE
 
 
+class AlertCaseSchema(ma.Schema):
+    case_id: int = fields.Integer(required=True)
+
+    @post_load
+    def make_case(self, data: Dict[str, Any], **kwargs: Any) -> Cases:
+        return Cases.query.filter(Cases.case_id == data.get('case_id')).first()
+
+
 class AlertSchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing Alert objects.
 
     This schema defines the fields to include when serializing and deserializing Alert objects.
-    It includes fields for the alert severity, status, customer, classification, owner, IOCs, Artifacts and assets.
+    It includes fields for the alert severity, status, customer, classification, owner, IOCs, and assets.
 
     """
     severity = ma.Nested(SeveritySchema)
@@ -2544,9 +2368,9 @@ class AlertSchema(ma.SQLAlchemyAutoSchema):
     classification = ma.Nested(CaseClassificationSchema)
     owner = ma.Nested(UserSchema, only=['id', 'user_name', 'user_login', 'user_email'])
     iocs = ma.Nested(IocSchema, many=True)
-    artifacts = ma.Nested(ArtifactSchema, many=True)
-    assets = ma.Nested(CaseAssetsSchema, many=True)
+    assets = ma.Nested(CaseAssetsSchema, many=True, exclude=['alerts'])
     resolution_status = ma.Nested(AlertResolutionSchema)
+    cases = fields.Pluck(AlertCaseSchema, 'case_id', many=True, required=False)
 
     class Meta:
         model = Alert
@@ -2945,4 +2769,3 @@ class UserSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
                 raise ValidationError(password_error, field_name='user_password')
 
         return data
-

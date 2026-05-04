@@ -31,7 +31,7 @@ from flask_login import current_user
 
 from app import db
 from app.blueprints.rest.case_comments import case_comment_update
-from app.datamgmt.case.case_assets_db import get_assets_types
+from app.datamgmt.case.assets_type import get_assets_types
 from app.datamgmt.case.case_db import get_case
 from app.datamgmt.case.case_artifacts_db import add_comment_to_artifact
 from app.datamgmt.case.case_artifacts_db import add_artifact

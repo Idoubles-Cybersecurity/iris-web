@@ -19,9 +19,6 @@ import logging as log
 import os
 import traceback
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
-from flask import jsonify, current_app, g
-from threading import Thread
 import requests
 
 from flask import Blueprint
@@ -30,7 +27,7 @@ from werkzeug import Response
 from werkzeug.utils import secure_filename
 from marshmallow import ValidationError
 
-from app import db
+from app.db import db
 from app.blueprints.rest.parsing import parse_comma_separated_identifiers
 from app.blueprints.rest.endpoints import endpoint_deprecated
 from app.blueprints.iris_user import iris_current_user
@@ -38,8 +35,7 @@ from app.datamgmt.alerts.alerts_db import get_alert_status_by_name
 from app.datamgmt.case.case_db import get_case
 from app.datamgmt.iris_engine.modules_db import get_pipelines_args_from_name
 from app.datamgmt.iris_engine.modules_db import iris_module_exists
-from app.datamgmt.manage.manage_case_templates_db import get_case_templates_list, get_triggers_by_case_template_id
-from app.datamgmt.manage.manage_cases_db import execute_and_save_trigger, get_filtered_cases
+from app.datamgmt.manage.manage_cases_db import get_filtered_cases
 from app.datamgmt.manage.manage_cases_db import close_case, map_alert_resolution_to_case_status
 from app.datamgmt.manage.manage_cases_db import get_case_details_rt
 from app.datamgmt.manage.manage_cases_db import list_cases_dict
@@ -55,7 +51,9 @@ from app.models.authorization import Permissions
 from app.schema.marshables import CaseSchema
 from app.schema.marshables import CaseDetailsSchema
 from app.util import add_obj_history_entry
-from app.blueprints.access_controls import ac_requires_case_identifier, ac_fast_check_current_user_has_case_access
+from app.blueprints.access_controls import ac_requires_case_identifier
+from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
+from app.blueprints.access_controls import ac_current_user_has_customer_access
 from app.blueprints.access_controls import ac_api_requires
 from app.blueprints.access_controls import ac_api_return_access_denied
 from app.blueprints.responses import response_error
@@ -65,9 +63,8 @@ from app.business.cases import cases_delete
 from app.business.cases import cases_update
 from app.business.cases import cases_create
 from app.business.cases import cases_get_by_identifier
-from app.business.errors import BusinessProcessingError
+from app.models.errors import BusinessProcessingError
 from app.iris_engine.module_handler.module_handler import call_deprecated_on_preload_modules_hook
-from app.datamgmt.manage.manage_access_control_db import user_has_client_access
 
 manage_cases_rest_blueprint = Blueprint('manage_case_rest', __name__)
 
@@ -192,7 +189,7 @@ def api_reopen_case(identifier):
 
                 db.session.add(alert)
 
-    case = call_modules_hook('on_postload_case_update', data=case, caseid=identifier)
+    case = call_modules_hook('on_postload_case_update', case, caseid=identifier)
 
     add_obj_history_entry(case, 'case reopen')
     track_activity(f"reopen case ID {identifier}", caseid=identifier)
@@ -226,18 +223,18 @@ def api_case_close(identifier):
         for alert in case.alerts:
             if alert.alert_status_id != close_status.status_id:
                 alert.alert_status_id = close_status.status_id
-                alert = call_modules_hook('on_postload_alert_update', data=alert, caseid=identifier)
+                alert = call_modules_hook('on_postload_alert_update', alert, caseid=identifier)
 
             if alert.alert_resolution_status_id != case_status_id_mapped:
                 alert.alert_resolution_status_id = case_status_id_mapped
-                alert = call_modules_hook('on_postload_alert_resolution_update', data=alert, caseid=identifier)
+                alert = call_modules_hook('on_postload_alert_resolution_update', alert, caseid=identifier)
 
                 track_activity(f'closing alert ID {alert.alert_id} due to case #{identifier} being closed',
                                caseid=identifier, ctx_less=False)
 
                 db.session.add(alert)
 
-    case = call_modules_hook('on_postload_case_update', data=case, caseid=identifier)
+    case = call_modules_hook('on_postload_case_update', case, caseid=identifier)
 
     add_obj_history_entry(case, 'case closed')
     track_activity(f'closed case ID {identifier}', caseid=identifier, ctx_less=False)
@@ -253,38 +250,15 @@ def api_add_case():
     case_schema = CaseSchema()
 
     try:
-        # Accept and possibly transform request via deprecated preload hook
-        request_data = call_deprecated_on_preload_modules_hook('case_create', request.get_json(), None)
-
-        # Extract and remove case_template_id from payload (may be None)
+        request_data = call_deprecated_on_preload_modules_hook('case_create', request.get_json())
+        case = case_schema.load(request_data)
         case_template_id = request_data.pop('case_template_id', None)
-
-        # Validate & build Case object from payload
-        case_obj = case_schema.load(request_data)
-
-        # Create the case with the template id (can be None)
-        case = cases_create(case_obj, case_template_id)
-        case_id = case.case_id
-
-        # Get triggers for the case_template_id (if any)
-        triggers = get_triggers_by_case_template_id(case_template_id)
-
-        if triggers:
-            # Function to execute a trigger in a new thread with app context
-            def execute_trigger_with_context(trigger, app):
-                with app.app_context():
-                    execute_and_save_trigger(trigger, case_id)
-
-            for trigger in triggers:
-                thread = Thread(target=execute_trigger_with_context, args=(trigger, current_app._get_current_object()))
-                thread.start()
-
-        msg = f'Case {case.case_id} created'
-        return response_success(msg, data=case_schema.dump(case))
+        result = cases_create(iris_current_user, case, case_template_id)
+        return response_success('Case created', data=case_schema.dump(result))
+    except ValidationError as e:
+        raise response_error('Data error', e.messages)
     except BusinessProcessingError as e:
         return response_error(e.get_message(), data=e.get_data())
-    except ValidationError as e:
-        return response_error('Data error', e.messages)
 
 
 @manage_cases_rest_blueprint.route('/manage/cases/list', methods=['GET'])
@@ -309,7 +283,7 @@ def update_case_info(identifier):
         request_data = request.get_json()
         # If user tries to update the customer, check if the user has access to the new customer
         if request_data.get('case_customer') and request_data.get('case_customer') != case.client_id:
-            if not user_has_client_access(iris_current_user.id, request_data.get('case_customer')):
+            if not ac_current_user_has_customer_access(request_data.get('case_customer')):
                 raise BusinessProcessingError('Invalid customer ID. Permission denied.')
 
         if 'case_name' in request_data:
@@ -457,91 +431,67 @@ def manage_cases_uploadfiles(caseid):
 @manage_cases_rest_blueprint.route('/manage/webhook-proxy', methods=['POST'])
 @ac_api_requires(Permissions.standard_user)
 def proxy_webhook_request():
-    """
-    Backend proxy for webhook requests to avoid CORS issues.
-    
-    Expected JSON payload:
-    {
-        "webhook_url": "https://example.com/webhook",
-        "method": "GET" (default) or "POST",
-        "timeout": 10 (default),
-        "verify_ssl": false (default),
-        "csrf_token": "..." (IRIS CSRF token)
-    }
-    
-    Returns:
-    {
-        "status": "success|error",
-        "message": "...",
-        "webhook_status_code": 200,
-        "webhook_response": "..."
-    }
-    """
+    """Backend proxy for webhook requests to avoid CORS issues."""
     try:
         request_data = request.get_json()
-        
+
         if not request_data:
             return response_error('No JSON payload provided')
-        
+
         webhook_url = request_data.get('webhook_url')
         method = request_data.get('method', 'GET').upper()
         timeout = request_data.get('timeout', 10)
         verify_ssl = request_data.get('verify_ssl', False)
-        
+
         if not webhook_url:
             return response_error('webhook_url is required')
-        
-        # Validate URL scheme
+
         if not webhook_url.startswith(('http://', 'https://')):
             return response_error('Invalid webhook URL. Must start with http:// or https://')
-        
-        # Replace localhost with host.docker.internal when running in Docker
-        # This allows containers to reach services on the host machine
+
         if 'localhost' in webhook_url or '127.0.0.1' in webhook_url:
             webhook_url = webhook_url.replace('localhost', 'host.docker.internal')
             webhook_url = webhook_url.replace('127.0.0.1', 'host.docker.internal')
-            log.info(f'Replaced localhost with host.docker.internal in webhook URL')
-        
+            log.info('Replaced localhost with host.docker.internal in webhook URL')
+
         try:
-            # Make the webhook request from the backend
             log.info(f'Proxying webhook request: {method} {webhook_url}')
-            
+
             if method == 'POST':
                 response_obj = requests.post(
                     webhook_url,
                     timeout=timeout,
                     verify=verify_ssl
                 )
-            else:  # GET or other methods
+            else:
                 response_obj = requests.get(
                     webhook_url,
                     timeout=timeout,
                     verify=verify_ssl
                 )
-            
+
             log.info(f'Webhook response status: {response_obj.status_code}')
-            
-            # Return success with webhook response details
+
             return response_success(
                 msg='Webhook request completed successfully',
                 data={
                     'webhook_status_code': response_obj.status_code,
-                    'webhook_response': response_obj.text[:500]  # Limit response size
+                    'webhook_response': response_obj.text[:500]
                 }
             )
-            
+
         except requests.exceptions.Timeout:
             log.error(f'Webhook request timeout: {webhook_url}')
             return response_error('Webhook request timed out', data={'webhook_status_code': 0})
-        
+
         except requests.exceptions.ConnectionError as e:
             log.error(f'Webhook connection error: {webhook_url} - {str(e)}')
             return response_error(f'Failed to connect to webhook: {str(e)}', data={'webhook_status_code': 0})
-        
+
         except requests.exceptions.RequestException as e:
             log.error(f'Webhook request error: {webhook_url} - {str(e)}')
             return response_error(f'Webhook request failed: {str(e)}', data={'webhook_status_code': 0})
-    
+
     except Exception as e:
         log.error(f'Webhook proxy error: {str(e)}')
         return response_error(f'Internal server error: {str(e)}')

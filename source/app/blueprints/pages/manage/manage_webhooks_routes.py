@@ -63,7 +63,6 @@ def list_webhooks_by_case_template_id(cur_id, task_id):
     Returns:
         Response: List of webhooks by case template id
     """
-
     caseid = request.args.get('cid')
     webhooks = get_action_by_case_template_id_and_task_id(cur_id, task_id, caseid)
 
@@ -72,7 +71,7 @@ def list_webhooks_by_case_template_id(cur_id, task_id):
 
 
 @manage_webhooks_blueprint.route('/manage/webhooks/<int:cur_id>', methods=['GET'])
-@ac_api_requires(Permissions.webhooks_read)
+@ac_api_requires(Permissions.webhooks_read, Permissions.tasks_execute)
 def get_webhook(cur_id):
     """Fetch a webhook by ID
     Args:
@@ -80,20 +79,15 @@ def get_webhook(cur_id):
     Returns:
         JSON Response: Webhook details
     """
-    print(f"Getting webhook with ID: {cur_id}")
     webhook = get_webhook_by_id(cur_id)
     if not webhook:
-        print(f"Webhook {cur_id} not found")
         return response_error(f"Invalid webhook ID {cur_id}")
 
     try:
         webhook_data = WebhookSchema().dump(webhook)
-        print(f"Webhook data: {webhook_data}")
     except ValidationError as error:
-        print(f"Validation error: {error}")
         return response_error("Could not serialize webhook", data=str(error))
 
-    print(f"Returning webhook data successfully")
     return response_success("Webhook retrieved successfully", data=webhook_data)
 
 
@@ -119,8 +113,6 @@ def webhook_modal(cur_id, caseid, url_redir):
     if not webhook:
         return response_error(f"Invalid webhook ID {cur_id}")
 
-    # Temporary : for now we build the full JSON form object based on case templates attributes
-    # Next step : add more fields to the form
     webhook_dict = {
         "name": webhook.name,
         "header_auth": webhook.header_auth,
@@ -199,7 +191,12 @@ def add_webhook(caseid):
         return response_error("Invalid request")
 
     try:
-        webhook_dict = json.loads(webhook_json)
+        if isinstance(webhook_json, str):
+            webhook_dict = json.loads(webhook_json)
+        elif isinstance(webhook_json, dict):
+            webhook_dict = webhook_json
+        else:
+            return response_error("Invalid JSON", data="webhook_json must be a JSON string or object")
     except Exception as e:
         return response_error("Invalid JSON", data=str(e))
 
@@ -212,8 +209,7 @@ def add_webhook(caseid):
 
     try:
         webhook_dict["created_by_user_id"] = current_user.id
-        webhook_data = WebhookSchema().load(webhook_dict)
-        webhook = Webhook(**webhook_data)
+        webhook = WebhookSchema().load(webhook_dict)
         db.session.add(webhook)
         db.session.commit()
     except Exception as e:
@@ -240,7 +236,12 @@ def update_webhook(cur_id):
         return response_error("Invalid request")
 
     try:
-        updated_webhook_dict = json.loads(updated_webhook_json)
+        if isinstance(updated_webhook_json, str):
+            updated_webhook_dict = json.loads(updated_webhook_json)
+        elif isinstance(updated_webhook_json, dict):
+            updated_webhook_dict = updated_webhook_json
+        else:
+            return response_error("Invalid JSON", data="webhook_json must be a JSON string or object")
     except Exception as e:
         return response_error("Invalid JSON", data=str(e))
 
@@ -254,14 +255,12 @@ def update_webhook(cur_id):
     webhook_schema = WebhookSchema()
 
     try:
-        # validate the request data and load it into an instance of the `Webhook` object
-        webhook_data = webhook_schema.load(updated_webhook_dict, partial=True)
-        # update the existing `webhook` object with the new data
-        webhook.update_from_dict(webhook_data)
-        # commit the changes to the database
+        webhook_schema.load(updated_webhook_dict, instance=webhook, partial=True)
         db.session.commit()
     except ValidationError as error:
         return response_error("Could not validate webhook", data=str(error))
+    except Exception as error:
+        return response_error("Could not update webhook", data=str(error))
 
     return response_success("webhook updated")
 

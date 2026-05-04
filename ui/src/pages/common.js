@@ -966,6 +966,26 @@ function createSanitizeExtensionForImg() {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = match;
 
+            const img = tempDiv.querySelector('img');
+            if (img) {
+                const src = img.getAttribute('src');
+                if (src && src.startsWith('/datastore/file/view/')) {
+                    try {
+                        const parsed = new URL(src, window.location.origin);
+                        const srcCid = parsed.searchParams.get('cid');
+                        const currentCid = get_caseid();
+
+                        if (srcCid && currentCid && String(srcCid) !== String(currentCid)) {
+                            img.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=');
+                            img.setAttribute('alt', 'Image unavailable (stale case reference)');
+                            img.setAttribute('title', 'Image unavailable (stale case reference)');
+                        }
+                    } catch (e) {
+                        // Keep original src when URL parsing fails.
+                    }
+                }
+            }
+
             tempDiv.querySelectorAll('*').forEach(el => {
                 [...el.attributes].forEach(attr => {
                     if (attr.name.startsWith('on')) {

@@ -22,8 +22,9 @@ from typing import Optional
 from sqlalchemy import desc
 from sqlalchemy import and_
 
-from app import db
-from app.blueprints.iris_user import iris_current_user
+from app.datamgmt.db_operations import db_create
+from app.datamgmt.db_operations import db_delete
+from app.db import db
 from app.datamgmt.conversions import convert_sort_direction
 from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
 from app.datamgmt.manage.manage_users_db import get_users_list_restricted_from_case
@@ -34,7 +35,6 @@ from app.models.cases import Cases
 from app.models.comments import Comments, TaskComments
 from app.models.models import TaskStatus
 from app.models.authorization import User
-from app.models.models import TaskResponse
 from app.models.pagination_parameters import PaginationParameters
 
 
@@ -122,17 +122,6 @@ def get_tasks_with_assignees(caseid):
 
 def get_task(task_id: int) -> Optional[CaseTasks]:
     return CaseTasks.query.filter(CaseTasks.id == task_id).first()
-
-
-def get_task_with_assignees(task_id: int, case_id: int) -> Optional[CaseTasks]:
-    """Get a single task with assignees and validate it belongs to the specified case"""
-    task = get_task(task_id)
-    if not task or task.task_case_id != case_id:
-        return None
-    
-    # Attach assignees to the task object as an attribute for compatibility
-    task.task_assignees = get_task_assignees(task_id)
-    return task
 
 
 def get_task_assignees(task_identifier: int):
@@ -253,8 +242,7 @@ def add_comment_to_task(task_id, comment_id):
     ec.comment_task_id = task_id
     ec.comment_id = comment_id
 
-    db.session.add(ec)
-    db.session.commit()
+    db_create(ec)
 
 
 def get_case_tasks_comments_count(tasks_list):
@@ -292,40 +280,30 @@ def get_case_task_comment(task_id, comment_id):
 
 def delete_task(task_id):
     with db.session.begin_nested():
-        # Delete task assignees
         TaskAssignee.query.filter(
             TaskAssignee.task_id == task_id
         ).delete()
 
-        # Get all comment IDs associated with the task
         com_ids = TaskComments.query.with_entities(
             TaskComments.comment_id
         ).filter(
             TaskComments.comment_task_id == task_id
         ).all()
 
-        
         com_ids = [c.comment_id for c in com_ids]
-
-        # Delete task comments
         TaskComments.query.filter(TaskComments.comment_id.in_(com_ids)).delete()
 
-        # Delete comments
         Comments.query.filter(Comments.comment_id.in_(com_ids)).delete()
 
-        # Delete task responses that reference the task
-        TaskResponse.query.filter(TaskResponse.task == task_id).delete()
-
-        # Finally, delete the task itself
         CaseTasks.query.filter(
             CaseTasks.id == task_id
         ).delete()
 
 
-def delete_task_comment(task_id, comment_id):
+def delete_task_comment(user_identifier, task_id, comment_id):
     comment = Comments.query.filter(
         Comments.comment_id == comment_id,
-        Comments.comment_user_id == iris_current_user.id
+        Comments.comment_user_id == user_identifier
     ).first()
     if not comment:
         return False, "You are not allowed to delete this comment"
@@ -335,8 +313,7 @@ def delete_task_comment(task_id, comment_id):
         TaskComments.comment_id == comment_id
     ).delete()
 
-    db.session.delete(comment)
-    db.session.commit()
+    db_delete(comment)
 
     return True, "Comment deleted"
 
@@ -365,3 +342,51 @@ def get_tasks_cases_mapping(open_cases_only=False):
     ).join(
         CaseTasks.case
     ).all()
+
+
+def list_user_tasks(user_identifier):
+    ct = CaseTasks.query.with_entities(
+        CaseTasks.id.label("task_id"),
+        CaseTasks.task_title,
+        CaseTasks.task_description,
+        CaseTasks.task_last_update,
+        CaseTasks.task_tags,
+        Cases.name.label('task_case'),
+        CaseTasks.task_case_id.label('case_id'),
+        CaseTasks.task_status_id,
+        TaskStatus.status_name,
+        TaskStatus.status_bscolor
+    ).join(
+        CaseTasks.case
+    ).order_by(
+        desc(TaskStatus.status_name)
+    ).filter(and_(
+        TaskStatus.status_name != 'Done',
+        TaskStatus.status_name != 'Canceled'
+    )).join(
+        CaseTasks.status,
+    ).filter(and_(
+        TaskAssignee.task_id == CaseTasks.id,
+        TaskAssignee.user_id == user_identifier
+    )).all()
+
+    return ct
+
+
+def update_utask_status(task_id, status, case_id):
+    if task_id != 0:
+        task = CaseTasks.query.filter(
+                CaseTasks.id == task_id,
+                CaseTasks.task_case_id == case_id
+        ).first()
+        if task:
+            try:
+                task.task_status_id = status
+
+                db.session.commit()
+                return True
+
+            except:
+                pass
+
+    return False

@@ -1,13 +1,12 @@
-from asyncio import log
-from flask import session
 from sqlalchemy import and_
 
-from app import db
+from app.db import db
 from app.business.access_controls import set_case_effective_access_for_user
+from app.datamgmt.manage.manage_access_control_db import add_several_user_effective_access
 from app.logger import logger
 from app.blueprints.iris_user import iris_current_user
 from app.models.cases import Cases
-from app.models.models import Client
+from app.models.customers import Client
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import ac_flag_match_mask
 from app.models.authorization import UserClient
@@ -18,15 +17,7 @@ from app.models.authorization import User
 from app.models.authorization import UserCaseAccess
 from app.models.authorization import UserCaseEffectiveAccess
 from app.models.authorization import UserGroup
-from app.models.authorization import Organisation
-from app.models.authorization import OrganisationCaseAccess
-from app.models.authorization import UserOrganisation
 
-import app
-log = app.app.logger
-
-def ac_flag_match_mask(flag, mask):
-    return (flag & mask) == mask
 
 def ac_get_mask_full_permissions():
     """
@@ -76,6 +67,7 @@ def ac_get_mask_analyst():
     return Permissions.standard_user.value | Permissions.alerts_read.value \
         | Permissions.alerts_write.value | Permissions.search_across_cases.value | Permissions.customers_read.value \
         | Permissions.activities_read.value
+
 
 def ac_permission_to_list(permission):
     """
@@ -171,6 +163,12 @@ def ac_get_effective_permissions_of_user(user):
         final_perm |= group.group_permissions
 
     return final_perm
+
+
+def ac_fast_check_current_user_has_case_access(cid, access_level):
+    from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access as _ac_fast_check_current_user_has_case_access
+
+    return _ac_fast_check_current_user_has_case_access(cid, access_level)
 
 
 def ac_ldp_group_removal(user_id, group_id):
@@ -291,71 +289,6 @@ def ac_trace_effective_user_permissions(user_id):
 
     return perms
 
-def ac_fast_check_user_has_case_access(user_id, cid, access_level):
-    """
-    Returns true if the user has access to the case
-    """
-    ucea = UserCaseEffectiveAccess.query.with_entities(
-        UserCaseEffectiveAccess.access_level
-    ).filter(
-        UserCaseEffectiveAccess.user_id == user_id,
-        UserCaseEffectiveAccess.case_id == cid
-    ).first()
-
-    if not ucea:
-        # The user has no direct access, check if he is part of the client
-        cuacu = check_ua_case_client(user_id, cid)
-        if cuacu is None:
-            return None
-        ac_set_case_access_for_user(user_id, cid, cuacu.access_level)
-
-        return cuacu.access_level
-
-    if ac_flag_match_mask(ucea[0], CaseAccessLevel.deny_all.value):
-        return None
-
-    for acl in access_level:
-        if ac_flag_match_mask(ucea[0], acl.value):
-            return ucea[0]
-
-    return None
-
-
-def ac_fast_check_current_user_has_case_access(cid, access_level):
-    return ac_fast_check_user_has_case_access(iris_current_user.id, cid, access_level)
-
-def ac_set_case_access_for_user(user_id, case_id, access_level, commit=True):
-    """
-    Set a case access from a user
-    """
-
-    uac = UserCaseEffectiveAccess.query.where(and_(
-        UserCaseEffectiveAccess.user_id == user_id,
-        UserCaseEffectiveAccess.case_id == case_id
-    )).all()
-
-    if len(uac) > 1:
-        log.error(f'Multiple access found for user {user_id} and case {case_id}')
-
-        for u in uac:
-            db.session.delete(u)
-        db.session.commit()
-
-        uac = UserCaseEffectiveAccess()
-        uac.user_id = user_id
-        uac.case_id = case_id
-        uac.access_level = access_level
-        db.session.add(uac)
-
-    elif len(uac) == 1:
-        uac = uac[0]
-        uac.access_level = access_level
-
-    if commit:
-        db.session.commit()
-
-    return
-
 
 def ac_recompute_effective_ac_from_users_list(users_list):
     """
@@ -393,31 +326,9 @@ def ac_add_users_multi_effective_access(users_list, cases_list, access_level):
     Add multiple users to multiple cases with a specific access level
     """
     for case_id in cases_list:
-        ac_add_user_effective_access(users_list, case_id=case_id, access_level=access_level)
+        add_several_user_effective_access(users_list, case_identifier=case_id, access_level=access_level)
 
     return
-
-
-def ac_add_user_effective_access(users_list, case_id, access_level):
-    """
-    Directly add a set of effective user access
-    """
-
-    UserCaseEffectiveAccess.query.filter(
-        UserCaseEffectiveAccess.case_id == case_id,
-        UserCaseEffectiveAccess.user_id.in_(users_list)
-    ).delete()
-
-    access_to_add = []
-    for user_id in users_list:
-        ucea = UserCaseEffectiveAccess()
-        ucea.user_id = user_id
-        ucea.case_id = case_id
-        ucea.access_level = access_level
-        access_to_add.append(ucea)
-
-    db.session.add_all(access_to_add)
-    db.session.commit()
 
 
 def ac_add_user_effective_access_from_map(users_map, case_id):
@@ -441,46 +352,57 @@ def ac_add_user_effective_access_from_map(users_map, case_id):
     db.session.commit()
 
 
-def ac_set_new_case_access(org_members, case_id, customer_id = None):
+def ac_set_new_case_access(user, case_id, customer_id):
     """
     Set a new case access
     """
 
     users = ac_apply_autofollow_groups_access(case_id)
-    if iris_current_user.id in users:
-        del users[iris_current_user.id]
+    if user.id in users:
+        del users[user.id]
 
     users_full = User.query.with_entities(User.id).all()
     users_full_access = list(set([u.id for u in users_full]) - set(users.keys()))
 
     # Default users case access - Full access
-    ac_add_user_effective_access(users_full_access, case_id, CaseAccessLevel.deny_all.value)
+    add_several_user_effective_access(users_full_access, case_id, CaseAccessLevel.deny_all.value)
 
+    set_user_case_access(user, case_id)
+
+    add_several_user_effective_access([user.id], case_id, CaseAccessLevel.full_access.value)
+
+    # Add customer permissions for all users belonging to the customer
+    if customer_id:
+        users_client = get_user_access_levels_by_customer(customer_id)
+        users_map = {u.user_id: u.access_level for u in users_client}
+        ac_add_user_effective_access_from_map(users_map, case_id)
+
+
+# TODO move down into app.datamgmt.manage.manage_access_control_db
+def get_user_access_levels_by_customer(customer_id):
+    users_client = UserClient.query.filter(
+        UserClient.client_id == customer_id
+    ).with_entities(
+        UserClient.user_id,
+        UserClient.access_level
+    ).all()
+    return users_client
+
+
+# TODO try to move down into app.datamgmt.manage.manage_users_db
+def set_user_case_access(user, case_id):
     # Add specific right for the user creating the case
     UserCaseAccess.query.filter(
         UserCaseAccess.case_id == case_id,
-        UserCaseAccess.user_id == iris_current_user.id
+        UserCaseAccess.user_id == user.id
     ).delete()
     db.session.commit()
     uca = UserCaseAccess()
     uca.case_id = case_id
-    uca.user_id = iris_current_user.id
+    uca.user_id = user.id
     uca.access_level = CaseAccessLevel.full_access.value
     db.session.add(uca)
     db.session.commit()
-
-    ac_add_user_effective_access([iris_current_user.id], case_id, CaseAccessLevel.full_access.value)
-
-    # Add customer permissions for all users belonging to the customer
-    if customer_id:
-        users_client = UserClient.query.filter(
-            UserClient.client_id == customer_id
-        ).with_entities(
-            UserClient.user_id,
-            UserClient.access_level
-        ).all()
-        users_map = { u.user_id: u.access_level for u in users_client }
-        ac_add_user_effective_access_from_map(users_map, case_id)
 
 
 def ac_apply_autofollow_groups_access(case_id):
@@ -874,196 +796,7 @@ def ac_trace_user_effective_cases_access_2(user_id):
 
         effective_cases_access[uca.case_id]['user_access'].append(access)
 
-    for case_id in effective_cases_access:
-        effective_cases_access[case_id]['user_effective_access'] = ac_access_level_to_list(
-            effective_cases_access[case_id]['user_effective_access'])
-    
     return effective_cases_access
-
-def ac_trace_case_access(case_id):
-
-    case = Cases.query.with_entities(
-        Cases.case_id,
-        Cases.name
-    ).filter(
-        Cases.case_id == case_id
-    ).first()
-
-    if not case:
-        return {}
-
-    ocas = OrganisationCaseAccess.query.with_entities(
-        Organisation.org_name,
-        Organisation.org_id,
-        Organisation.org_uuid,
-        OrganisationCaseAccess.access_level,
-        User.id.label('user_id'),
-        User.name.label('user_name'),
-        User.email.label('user_email'),
-        User.uuid.label('user_uuid')
-    ).filter(
-        and_(OrganisationCaseAccess.case_id == case.case_id,
-             OrganisationCaseAccess.org_id == UserOrganisation.org_id)
-    ).join(
-        OrganisationCaseAccess.org,
-        UserOrganisation.user
-    ).all()
-
-    gcas = GroupCaseAccess.query.with_entities(
-        Group.group_name,
-        Group.group_id,
-        Group.group_uuid,
-        GroupCaseAccess.access_level,
-        User.id.label('user_id'),
-        User.name.label('user_name'),
-        User.email.label('user_email'),
-        User.uuid.label('user_uuid')
-    ).filter(
-        and_(GroupCaseAccess.case_id == case.case_id,
-             UserGroup.group_id == GroupCaseAccess.group_id)
-    ).join(
-        GroupCaseAccess.group,
-        UserGroup.user
-    ).all()
-
-    ucas = UserCaseAccess.query.with_entities(
-        User.id.label('user_id'),
-        User.name.label('user_name'),
-        User.uuid.label('user_uuid'),
-        User.email.label('user_email'),
-        UserCaseAccess.access_level
-    ).filter(
-        and_(UserCaseAccess.case_id == case.case_id)
-    ).join(
-        UserCaseAccess.user
-    ).all()
-
-    case_access = {}
-
-    for uca in ucas:
-        user = {
-            'access_trace': [],
-            'user_effective_access': 0,
-            'user_effective_access_list': [],
-            'user_info': {
-                'user_name': uca.user_name,
-                'user_uuid': uca.user_uuid,
-                'user_email': uca.user_email
-            }
-        }
-        for ac_l in CaseAccessLevel:
-
-            if uca:
-                if ac_flag_match_mask(uca.access_level, ac_l.value):
-                    user['user_effective_access'] |= uca.access_level
-                    user['access_trace'].append({
-                        'state': 'Effective',
-                        'name': ac_l.name,
-                        'value': ac_l.value,
-                        'inherited_from': {
-                            'object_type': 'user_access_level',
-                            'object_name': 'self',
-                            'object_id': 'self',
-                            'object_uuid': 'self'
-                        }
-                    })
-                    user['user_effective_access_list'].append(ac_l.name)
-                    has_uca_overwritten = True
-                    if ac_l.value == CaseAccessLevel.deny_all.value:
-                        has_uca_deny_all = True
-
-        if uca.user_id not in case_access:
-            case_access.update({
-                uca.user_id: user
-            })
-
-    for gca in gcas:
-        if gca.user_id not in case_access:
-            user = {
-                'access_trace': [],
-                'user_effective_access': 0,
-                'user_effective_access_list': [],
-                'user_info': {
-                    'user_name': gca.user_name,
-                    'user_uuid': gca.user_uuid,
-                    'user_email': gca.user_email
-                }
-            }
-        else:
-            user = case_access[gca.user_id]
-
-        for ac_l in CaseAccessLevel:
-
-            if gca:
-                if ac_flag_match_mask(gca.access_level, ac_l.value):
-                    if gca.user_id not in case_access:
-                        user['user_effective_access'] |= gca.access_level
-                        user['user_effective_access_list'].append(ac_l.name)
-                        state = 'Effective'
-                    else:
-                        state = 'Overwritten by user access'
-
-                    user['access_trace'].append({
-                            'state': state,
-                            'name': ac_l.name,
-                            'value': ac_l.value,
-                            'inherited_from': {
-                                'object_type': 'group_access_level',
-                                'object_name': gca.group_name,
-                                'object_id': gca.group_id,
-                                'object_uuid': gca.group_uuid
-                            }
-                        })
-
-        if gca.user_id not in case_access:
-            case_access.update({
-                gca.user_id: user
-            })
-
-    for oca in ocas:
-        if oca.user_id not in case_access:
-            user = {
-                'access_trace': [],
-                'user_effective_access': 0,
-                'user_effective_access_list': [],
-                'user_info': {
-                    'user_name': oca.user_name,
-                    'user_uuid': oca.user_uuid,
-                    'user_email': oca.user_email
-                }
-            }
-        else:
-            user = case_access[oca.user_id]
-
-        for ac_l in CaseAccessLevel:
-
-            if oca:
-                if ac_flag_match_mask(oca.access_level, ac_l.value):
-                    if oca.user_id not in case_access:
-                        user['user_effective_access'] |= oca.access_level
-                        user['user_effective_access_list'].append(ac_l.name)
-                        state = 'Effective'
-                    else:
-                        state = 'Overwritten by user or group access'
-
-                    user['access_trace'].append({
-                            'state': state,
-                            'name': ac_l.name,
-                            'value': ac_l.value,
-                            'inherited_from': {
-                                'object_type': 'organisation_access_level',
-                                'object_name': oca.org_name,
-                                'object_id': oca.org_id,
-                                'object_uuid': oca.org_uuid
-                            }
-                        })
-
-        if oca.user_id not in case_access:
-            case_access.update({
-                oca.user_id: user
-            })
-
-    return case_access
 
 
 def ac_get_mask_case_access_level_full():
@@ -1107,28 +840,3 @@ def ac_access_level_to_list(access_level):
             })
 
     return access_levels
-
-
-def ac_access_level_mask_from_val_list(access_levels):
-    """
-    Return an access level mask from a list of access levels
-    """
-    am = 0
-    for acc in access_levels:
-        am |= int(acc)
-
-    return am
-
-
-def ac_user_has_permission(user, permission):
-    """
-    Return True if user has permission
-    """
-    return ac_flag_match_mask(ac_get_effective_permissions_of_user(user), permission.value)
-
-
-def ac_current_user_has_permission(permission):
-    """
-    Return True if current user has permission
-    """
-    return ac_flag_match_mask(session['permissions'], permission.value)

@@ -26,6 +26,7 @@ from app.datamgmt.manage.manage_access_control_db import user_has_client_access
 from app.logger import logger
 from app.models.authorization import UserCaseAccess
 from app.models.authorization import CaseAccessLevel
+from app.models.authorization import Permissions
 from app.models.authorization import ac_flag_match_mask
 
 
@@ -98,5 +99,35 @@ def ac_fast_check_user_has_case_access(user_id, cid, expected_access_levels: lis
     return None
 
 
-def access_controls_user_has_customer_access(user, customer_identifier):
-    return user_has_client_access(user.id, customer_identifier)
+def access_controls_user_has_customer_access(
+    user,
+    permissions_or_customer_identifier,
+    customer_identifier=None,
+    fallback_customer_access=None
+):
+    # Backward compatibility:
+    # - old style: access_controls_user_has_customer_access(user, customer_identifier)
+    # - new style: access_controls_user_has_customer_access(user, permissions, customer_identifier, fallback)
+    if customer_identifier is None:
+        permissions = None
+        customer_identifier = permissions_or_customer_identifier
+    else:
+        permissions = permissions_or_customer_identifier
+
+    if permissions is not None and ac_flag_match_mask(permissions, Permissions.server_administrator.value):
+        return True
+
+    user_id = getattr(user, 'id', None)
+    if user_id is None:
+        return False
+
+    if user_has_client_access(user_id, customer_identifier):
+        return True
+
+    if fallback_customer_access and (hasattr(user, 'is_authenticated') or hasattr(user, 'user')):
+        try:
+            return fallback_customer_access(customer_identifier)
+        except Exception:
+            return False
+
+    return False

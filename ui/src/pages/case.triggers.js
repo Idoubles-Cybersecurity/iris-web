@@ -2,13 +2,14 @@ document.addEventListener("DOMContentLoaded", () => {
     loadTableData();
     const table = document.getElementById("trigger_table");
     const responseModal = document.getElementById("responseModal");
-    const closeButton = responseModal.querySelector('[data-dismiss="hide-frame"]');
+    const closeButton = responseModal?.querySelector('[data-dismiss="hide-frame"]');
     
     // Initialize the modal instance
-    const modal = new bootstrap.Modal(responseModal);
+    const modal = responseModal ? new bootstrap.Modal(responseModal) : null;
  
     // Show modal on "View Response" button click
-    table.addEventListener("click", (event) => {
+    if (table) {
+        table.addEventListener("click", (event) => {
         if (event.target && event.target.classList.contains("view-response")) {
             const button = event.target;
             const responseData = button.getAttribute("data-response");
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
     });
+    }
 
     if (closeButton) {
         closeButton.addEventListener("click", () => {

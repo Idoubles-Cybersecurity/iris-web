@@ -23,20 +23,21 @@ from sqlalchemy import and_
 from sqlalchemy import func
 from flask_sqlalchemy.pagination import Pagination
 
-from app import db
+from app.datamgmt.db_operations import db_create
+from app.datamgmt.db_operations import db_delete
+from app.db import db
 from app.logger import logger
-from app.blueprints.iris_user import iris_current_user
 from app.datamgmt.filtering import get_filtered_data
 from app.datamgmt.states import update_assets_state
-from app.models.models import AnalysisStatus
-from app.models.models import CaseStatus
-from app.models.models import AssetsType
-from app.models.models import CaseAssets
 from app.models.models import CaseEventsAssets
 from app.models.cases import Cases
+from app.models.cases import CaseStatus
 from app.models.comments import Comments
 from app.models.comments import AssetComments
-from app.models.models import CompromiseStatus
+from app.models.assets import CompromiseStatus
+from app.models.assets import AssetsType
+from app.models.assets import CaseAssets
+from app.models.assets import AnalysisStatus
 from app.models.iocs import Ioc
 from app.models.models import IocAssetLink
 from app.models.models import IocType
@@ -109,9 +110,11 @@ def get_assets_by_case(case_identifier):
     return CaseAssets.query.with_entities(
         CaseEventsAssets.event_id,
         CaseAssets.asset_name
+    ).join(
+        CaseEventsAssets.asset
     ).filter(
-        CaseEventsAssets.case_id == case_identifier,
-    ).join(CaseEventsAssets.asset).all()
+        CaseEventsAssets.case_id == case_identifier
+    ).all()
 
 
 def filter_assets(case_identifier, pagination_parameters: PaginationParameters, request_parameters: dict) -> Pagination:
@@ -172,18 +175,18 @@ def delete_asset(asset: CaseAssets):
     ).delete()
 
     # Delete the relevant records from the AssetComments table
-    com_ids = AssetComments.query.with_entities(
+    com_rows = AssetComments.query.with_entities(
         AssetComments.comment_id
     ).filter(
         AssetComments.comment_asset_id == asset.asset_id
     ).all()
 
-    com_ids = [c.comment_id for c in com_ids]
-    AssetComments.query.filter(AssetComments.comment_id.in_(com_ids)).delete()
+    # Normalize to a list of scalar ids (SQLAlchemy may return row-tuples)
+    com_ids = [r[0] for r in com_rows] if com_rows else []
 
-    Comments.query.filter(
-        Comments.comment_id.in_(com_ids)
-    ).delete()
+    if com_ids:
+        AssetComments.query.filter(AssetComments.comment_id.in_(com_ids)).delete(synchronize_session=False)
+        Comments.query.filter(Comments.comment_id.in_(com_ids)).delete(synchronize_session=False)
 
     db.session.delete(asset)
 
@@ -191,13 +194,6 @@ def delete_asset(asset: CaseAssets):
 
     db.session.commit()
 
-def get_assets_types():
-    assets_types = [(c.asset_id, c.asset_name) for c
-                    in AssetsType.query.with_entities(AssetsType.asset_name,
-                                                      AssetsType.asset_id).order_by(AssetsType.asset_name)
-                    ]
-
-    return assets_types
 
 def get_unspecified_analysis_status_id():
     """
@@ -343,8 +339,7 @@ def add_comment_to_asset(asset_id, comment_id):
     ec.comment_asset_id = asset_id
     ec.comment_id = comment_id
 
-    db.session.add(ec)
-    db.session.commit()
+    db_create(ec)
 
 
 def get_case_assets_comments_count(asset_id):
@@ -360,43 +355,19 @@ def get_case_assets_comments_count(asset_id):
 
 
 def get_case_asset_comment(asset_id, comment_id) -> Optional[Comments]:
-    return AssetComments.query.filter(
+    return Comments.query.join(AssetComments.comment).filter(
         AssetComments.comment_asset_id == asset_id,
-        AssetComments.comment_id == comment_id
-    ).with_entities(
-        Comments.comment_id,
-        Comments.comment_text,
-        Comments.comment_date,
-        Comments.comment_update_date,
-        Comments.comment_uuid,
-        Comments.comment_user_id,
-        Comments.comment_case_id,
-        User.name,
-        User.user
-    ).join(
-        AssetComments.comment
-    ).join(
-        Comments.user
+        Comments.comment_id == comment_id
     ).first()
 
 
-def delete_asset_comment(asset_id, comment_id):
-    comment = Comments.query.filter(
-        Comments.comment_id == comment_id,
-        Comments.comment_user_id == iris_current_user.id
-    ).first()
-    if not comment:
-        return False, "You are not allowed to delete this comment"
-
+def delete_asset_comment(asset_id, comment: Comments):
     AssetComments.query.filter(
         AssetComments.comment_asset_id == asset_id,
-        AssetComments.comment_id == comment_id
+        AssetComments.comment_id == comment.comment_id
     ).delete()
 
-    db.session.delete(comment)
-    db.session.commit()
-
-    return True, "Comment deleted"
+    db_delete(comment)
 
 
 def get_asset_by_name(asset_name, caseid):

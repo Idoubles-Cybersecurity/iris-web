@@ -29,6 +29,7 @@ from app.datamgmt.case.case_events_db import get_case_events_comments_count
 from app.datamgmt.case.case_events_db import get_case_iocs_for_tm
 from app.datamgmt.case.case_events_db import get_default_cat
 from app.datamgmt.case.case_events_db import get_event_assets_ids
+from app.datamgmt.case.case_events_db import get_event_artifacts_ids
 from app.datamgmt.case.case_events_db import get_event_iocs_ids
 from app.datamgmt.case.case_events_db import get_events_categories
 from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
